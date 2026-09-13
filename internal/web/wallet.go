@@ -89,15 +89,17 @@ func registerWalletRoutes(mux *http.ServeMux, ws *wallet.Service) {
 		}
 	}
 
-	// GET /api/wallet
-	mux.HandleFunc("GET /api/wallet", walletFilter(func(w http.ResponseWriter, r *http.Request) {
+	// GET /api/wallet and GET /api/wallet/status
+	statusHandler := walletFilter(func(w http.ResponseWriter, r *http.Request) {
 		info, err := ws.Status()
 		if err != nil {
 			respondWallet(w, http.StatusInternalServerError, nil, err)
 			return
 		}
 		respondWallet(w, http.StatusOK, info, nil)
-	}))
+	})
+	mux.HandleFunc("GET /api/wallet", statusHandler)
+	mux.HandleFunc("GET /api/wallet/status", statusHandler)
 
 	// POST /api/wallet/create
 	mux.HandleFunc("POST /api/wallet/create", walletFilter(func(w http.ResponseWriter, r *http.Request) {

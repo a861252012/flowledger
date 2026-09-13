@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -27,9 +28,10 @@ type Service struct {
 	journal      *JournalManager
 	csrfToken    string
 	sendMu       sync.Mutex
+	historyMu    sync.Mutex
 	walletDir    string
 	lockFile     *os.File
-	storageFault bool
+	storageFault atomic.Bool
 }
 
 func NewService(client *chain.Client, walletDir string, scryptParams ...int) (*Service, error) {
@@ -89,6 +91,8 @@ func NewService(client *chain.Client, walletDir string, scryptParams ...int) (*S
 func (s *Service) Close() error {
 	s.sendMu.Lock()
 	defer s.sendMu.Unlock()
+	s.historyMu.Lock()
+	defer s.historyMu.Unlock()
 	if s.lockFile == nil {
 		return nil
 	}
@@ -158,7 +162,7 @@ func (s *Service) Token(ctx context.Context, contract string) (*TokenInfo, error
 func (s *Service) Quote(ctx context.Context, req *QuoteRequest) (*QuoteResponse, error) {
 	s.sendMu.Lock()
 	defer s.sendMu.Unlock()
-	if s.storageFault {
+	if s.storageFault.Load() {
 		return nil, errors.New("交易儲存發生錯誤，請修復磁碟後重啟錢包")
 	}
 	if !s.keystore.Exists() {
@@ -192,7 +196,7 @@ func (s *Service) Send(ctx context.Context, quoteID, password string) (*SendResp
 	s.sendMu.Lock()
 	defer s.sendMu.Unlock()
 
-	if s.storageFault {
+	if s.storageFault.Load() {
 		return nil, errors.New("交易儲存發生錯誤，請修復磁碟後重啟錢包")
 	}
 	// Double-click / retry of same quoteID: return existing record without re-signing
@@ -345,38 +349,46 @@ func (s *Service) Send(ctx context.Context, quoteID, password string) (*SendResp
 
 	// PREPARE / SIGN / BROADCAST:
 	// Must persist atomically before any RPC broadcast! No send if persistence fails!
-	if err := s.journal.AppendAtomic(record); err != nil {
-		s.storageFault = true
+	baseVersion, err := s.journal.AppendAtomic(record)
+	if err != nil {
+		if !errors.Is(err, ErrJournalFull) {
+			s.storageFault.Store(true)
+		}
 		return nil, err
 	}
 
 	// Broadcast to RPC
 	broadcastErr := s.client.SendTransaction(ctx, signedTx)
-	if broadcastErr == nil {
-		if err := s.journal.UpdateStateAtomic(txHash, "submitted", "", "", ""); err != nil {
-			s.storageFault = true
-			return &SendResponse{Hash: txHash, State: "broadcast_unknown", To: record.To, Amount: record.Amount, Symbol: record.Symbol, Action: record.Action, CreatedAt: now.Format(time.RFC3339)}, nil
-		}
-		s.quotes.Remove(quote.ID)
-		return &SendResponse{
-			Hash:      txHash,
-			State:     "submitted",
-			To:        record.To,
-			Amount:    record.Amount,
-			Symbol:    record.Symbol,
-			Action:    record.Action,
-			CreatedAt: now.Format(time.RFC3339),
-		}, nil
+	newState := "submitted"
+	var errStr string
+	if broadcastErr != nil {
+		newState = "broadcast_unknown"
+		errStr = broadcastErr.Error()
 	}
 
-	// Ambiguity or timeout: record broadcast_unknown, never pretend failure/no write
-	if err := s.journal.UpdateStateAtomic(txHash, "broadcast_unknown", "", "", broadcastErr.Error()); err != nil {
-		s.storageFault = true
+	updated, err := s.journal.UpdateStateAtomicIfVersion(txHash, baseVersion, newState, "", "", errStr)
+	if err != nil {
+		s.storageFault.Store(true)
+		return nil, err
 	}
 	s.quotes.Remove(quote.ID)
+	if !updated {
+		latest := s.journal.FindByHash(txHash)
+		if latest != nil {
+			return &SendResponse{
+				Hash:      latest.Hash,
+				State:     latest.State,
+				To:        latest.To,
+				Amount:    latest.Amount,
+				Symbol:    latest.Symbol,
+				Action:    latest.Action,
+				CreatedAt: latest.CreatedAt.Format(time.RFC3339),
+			}, nil
+		}
+	}
 	return &SendResponse{
 		Hash:      txHash,
-		State:     "broadcast_unknown",
+		State:     newState,
 		To:        record.To,
 		Amount:    record.Amount,
 		Symbol:    record.Symbol,
@@ -388,6 +400,10 @@ func (s *Service) Send(ctx context.Context, quoteID, password string) (*SendResp
 func (s *Service) Retry(ctx context.Context, hash string) (*SendResponse, error) {
 	s.sendMu.Lock()
 	defer s.sendMu.Unlock()
+
+	if s.storageFault.Load() {
+		return nil, errors.New("交易儲存發生錯誤，請修復磁碟後重啟錢包")
+	}
 
 	record := s.journal.FindByHash(hash)
 	if record == nil {
@@ -405,6 +421,8 @@ func (s *Service) Retry(ctx context.Context, hash string) (*SendResponse, error)
 			CreatedAt: record.CreatedAt.Format(time.RFC3339),
 		}, nil
 	}
+
+	baseVersion := record.Version
 
 	rawBytes, err := hexutil.Decode(record.SignedRaw)
 	if err != nil {
@@ -432,15 +450,29 @@ func (s *Service) Retry(ctx context.Context, hash string) (*SendResponse, error)
 		errStr = broadcastErr.Error()
 	}
 
-	if err := s.journal.UpdateStateAtomic(record.Hash, newState, "", "", errStr); err != nil {
-		s.storageFault = true
-		newState = "broadcast_unknown"
+	updated, err := s.journal.UpdateStateAtomicIfVersion(record.Hash, baseVersion, newState, "", "", errStr)
+	if err != nil {
+		s.storageFault.Store(true)
+		return nil, err
 	}
-	record.State = newState
+	if !updated {
+		latest := s.journal.FindByHash(record.Hash)
+		if latest != nil {
+			return &SendResponse{
+				Hash:      latest.Hash,
+				State:     latest.State,
+				To:        latest.To,
+				Amount:    latest.Amount,
+				Symbol:    latest.Symbol,
+				Action:    latest.Action,
+				CreatedAt: latest.CreatedAt.Format(time.RFC3339),
+			}, nil
+		}
+	}
 
 	return &SendResponse{
 		Hash:      record.Hash,
-		State:     record.State,
+		State:     newState,
 		To:        record.To,
 		Amount:    record.Amount,
 		Symbol:    record.Symbol,
@@ -450,25 +482,33 @@ func (s *Service) Retry(ctx context.Context, hash string) (*SendResponse, error)
 }
 
 func (s *Service) History(ctx context.Context) (*HistoryResponse, error) {
-	s.sendMu.Lock()
-	defer s.sendMu.Unlock()
+	s.historyMu.Lock()
+	defer s.historyMu.Unlock()
 	// Refresh recent and outstanding records without treating RPC errors as transaction failure.
 	refreshError := ""
-	for _, hash := range s.journal.RefreshHashes() {
-		txInfo, err := s.client.Transaction(ctx, hash)
+	for _, item := range s.journal.RefreshItems() {
+		if ctx.Err() != nil {
+			refreshError = "部分交易未能完成鏈上查核；以下保留本機最後紀錄，請稍後更新。"
+			break
+		}
+		txInfo, err := s.client.Transaction(ctx, item.Hash)
+		if ctx.Err() != nil {
+			refreshError = "部分交易未能完成鏈上查核；以下保留本機最後紀錄，請稍後更新。"
+			break
+		}
 		if err == nil && txInfo != nil {
 			if txInfo.State == "succeeded" || txInfo.State == "reverted" || txInfo.State == "reorg_detected" || txInfo.State == "pending" || txInfo.State == "receipt_unavailable" {
-				if err := s.journal.UpdateStateAtomic(hash, txInfo.State, txInfo.Confirmations, txInfo.FeeETH, ""); err != nil {
-					s.storageFault = true
+				if _, err := s.journal.UpdateStateAtomicIfVersion(item.Hash, item.Version, txInfo.State, txInfo.Confirmations, txInfo.FeeETH, ""); err != nil {
+					s.storageFault.Store(true)
 					return nil, err
 				}
 			}
 		}
 		if errors.Is(err, chain.ErrNotFound) {
-			record := s.journal.FindByHash(hash)
+			record := s.journal.FindByHash(item.Hash)
 			if record != nil && (record.State == "succeeded" || record.State == "reverted") {
-				if err := s.journal.UpdateStateAtomic(hash, "broadcast_unknown", "", "", ""); err != nil {
-					s.storageFault = true
+				if _, err := s.journal.UpdateStateAtomicIfVersion(item.Hash, item.Version, "broadcast_unknown", "", "", ""); err != nil {
+					s.storageFault.Store(true)
 					return nil, err
 				}
 			}
@@ -476,6 +516,10 @@ func (s *Service) History(ctx context.Context) (*HistoryResponse, error) {
 		if err != nil {
 			refreshError = "部分交易未能完成鏈上查核；以下保留本機最後紀錄，請稍後更新。"
 		}
+	}
+
+	if ctx.Err() != nil && refreshError == "" {
+		refreshError = "部分交易未能完成鏈上查核；以下保留本機最後紀錄，請稍後更新。"
 	}
 
 	return &HistoryResponse{

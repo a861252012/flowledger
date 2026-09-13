@@ -33,6 +33,17 @@ func mockRPC(t *testing.T, handler func(method string, params json.RawMessage) a
 		}
 		result := handler(req.Method, req.Params)
 		w.Header().Set("Content-Type", "application/json")
+		if errVal, ok := result.(error); ok && errVal != nil {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"jsonrpc": "2.0",
+				"id":      req.ID,
+				"error": map[string]any{
+					"code":    -32000,
+					"message": errVal.Error(),
+				},
+			})
+			return
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"jsonrpc": "2.0",
 			"id":      req.ID,
@@ -302,7 +313,7 @@ func TestQuoteAndSendLifecycle(t *testing.T) {
 		case "eth_estimateGas":
 			return "0x5208" // 21000
 		case "eth_sendRawTransaction":
-			broadcastCount++
+			broadcastCount += 1
 			var args []string
 			if err := json.Unmarshal(params, &args); err != nil {
 				t.Error(err)
@@ -474,5 +485,54 @@ func TestUncertainBroadcastPersisted(t *testing.T) {
 	record := svc.journal.FindByHash(res.Hash)
 	if record == nil || record.SignedRaw == "" {
 		t.Fatal("signed raw transaction was not persisted!")
+	}
+}
+
+func TestQuoteInsufficientFunds(t *testing.T) {
+	dir := t.TempDir()
+	h := &types.Header{
+		Number:     big.NewInt(100),
+		Difficulty: big.NewInt(0),
+		BaseFee:    big.NewInt(1000000000), // 1 gwei
+		GasLimit:   30000000,
+	}
+	recipient := "0x2222222222222222222222222222222222222222"
+	estimateGasCalled := false
+	c := mockRPC(t, func(method string, params json.RawMessage) any {
+		switch method {
+		case "eth_chainId":
+			return "0xaa36a7"
+		case "eth_getBlockByNumber":
+			return h
+		case "eth_maxPriorityFeePerGas":
+			return "0x3b9aca00"
+		case "eth_getBalance":
+			return "0x0" // 0 ETH
+		case "eth_estimateGas":
+			estimateGasCalled = true
+			return nil
+		default:
+			return nil
+		}
+	})
+
+	svc, err := NewService(c, dir, 2, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+
+	_, err = svc.Create("test-password-123")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	_, err = svc.Quote(ctx, &QuoteRequest{Action: "eth", To: recipient, Amount: "0.000001"})
+	if !errors.Is(err, ErrInsufficientFunds) {
+		t.Fatalf("expected ErrInsufficientFunds, got: %v", err)
+	}
+	if estimateGasCalled {
+		t.Fatal("estimateGas should not have been called when balance is insufficient")
 	}
 }

@@ -85,6 +85,15 @@ func TestWalletSecurityAndRestrictions(t *testing.T) {
 		if w2.Code != 200 {
 			t.Fatalf("expected 200 for 127.0.0.1 host, got %d", w2.Code)
 		}
+
+		// Status endpoint alias accepted
+		wStatus := httptest.NewRecorder()
+		reqStatus := httptest.NewRequest("GET", "http://localhost:8090/api/wallet/status", nil)
+		reqStatus.Host = "127.0.0.1:8090"
+		h.ServeHTTP(wStatus, reqStatus)
+		if wStatus.Code != 200 {
+			t.Fatalf("expected 200 for /api/wallet/status, got %d", wStatus.Code)
+		}
 	})
 
 	// 2. Cross-origin rejection

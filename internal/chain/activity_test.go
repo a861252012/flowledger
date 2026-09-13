@@ -176,7 +176,7 @@ func TestDiscoveryScopesLogsAndDeduplicates(t *testing.T) {
 			if !include {
 				return header
 			}
-			blocks++
+			blocks += 1
 			raw, _ := header.MarshalJSON()
 			var value map[string]any
 			json.Unmarshal(raw, &value)
@@ -194,7 +194,7 @@ func TestDiscoveryScopesLogsAndDeduplicates(t *testing.T) {
 			if len(args) != 1 || len(args[0].Address) != 3 || len(args[0].Topics) != 3 || args[0].Topics[2][0] != common.BytesToHash(owner.Bytes()) {
 				t.Fatalf("unscoped log request %s", params)
 			}
-			log := types.Log{Address: token, TxHash: hash, BlockNumber: 2, Data: common.LeftPadBytes(big.NewInt(1).Bytes(), 32), Topics: []common.Hash{transferTopic, common.Hash{}, common.BytesToHash(owner.Bytes())}}
+			log := types.Log{Address: token, TxHash: hash, BlockNumber: 2, Data: common.LeftPadBytes(big.NewInt(1).Bytes(), 32), Topics: []common.Hash{transferTopic, {}, common.BytesToHash(owner.Bytes())}}
 			return []types.Log{log, log}
 		default:
 			t.Errorf("unexpected RPC %s", method)

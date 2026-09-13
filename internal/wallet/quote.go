@@ -288,6 +288,19 @@ func CreateQuote(ctx context.Context, provider ChainQuoteProvider, from common.A
 	maxFeePerGas := new(big.Int).Mul(baseFee, big.NewInt(2))
 	maxFeePerGas.Add(maxFeePerGas, maxPriorityFeePerGas)
 
+	// Preliminary balance check against minimum possible execution cost (txValue + 21000 * maxFeePerGas)
+	// 21,000 gas is the protocol minimum for any transaction.
+	// If the wallet balance cannot cover even this minimum, calling EstimateGas would fail with an EVM OutOfFunds error.
+	ethBalance, err := provider.BalanceAt(ctx, from, nil)
+	if err != nil {
+		return nil, err
+	}
+	minGasFee := new(big.Int).Mul(big.NewInt(21000), maxFeePerGas)
+	minRequiredETH := new(big.Int).Add(txValue, minGasFee)
+	if ethBalance.Cmp(minRequiredETH) < 0 {
+		return nil, ErrInsufficientFunds
+	}
+
 	// Estimate every transfer, including ETH sent to smart-contract recipients.
 	est, err := provider.EstimateGas(ctx, ethereum.CallMsg{From: from, To: &txTo, GasFeeCap: maxFeePerGas, GasTipCap: maxPriorityFeePerGas, Value: txValue, Data: calldata})
 	if err != nil {
@@ -314,11 +327,7 @@ func CreateQuote(ctx context.Context, provider ChainQuoteProvider, from common.A
 	totalETHWei := new(big.Int).Add(txValue, maxFeeETHWei)
 	totalETHStr := FormatUnits(totalETHWei, 18)
 
-	// Check wallet ETH balance
-	ethBalance, err := provider.BalanceAt(ctx, from, nil)
-	if err != nil {
-		return nil, err
-	}
+	// Final check with exact gasLimit
 	if ethBalance.Cmp(totalETHWei) < 0 {
 		return nil, ErrInsufficientFunds
 	}

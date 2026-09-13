@@ -217,7 +217,7 @@ func TestConcurrentSendSignsExactQuoteOnce(t *testing.T) {
 	q := ethQuote(t, s)
 	var wg sync.WaitGroup
 	results := make(chan *SendResponse, 4)
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 4; i += 1 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -392,5 +392,23 @@ func TestHistoryReportsUnverifiedRecords(t *testing.T) {
 	}
 	if history.RefreshError == "" || len(history.Transactions) != 1 || history.Transactions[0].Hash != sent.Hash || history.Transactions[0].State != "submitted" {
 		t.Fatalf("missing freshness warning or changed local record: %+v", history)
+	}
+}
+
+func TestQuoteERC20InsufficientETHFunds(t *testing.T) {
+	s, state := guardedFixture(t)
+	state.balance = big.NewInt(0) // 0 ETH
+	state.gas = 0                 // If estimateGas is invoked, it would fail
+
+	req := &QuoteRequest{
+		Action:   "transfer",
+		Contract: "0x4444444444444444444444444444444444444444",
+		To:       "0x2222222222222222222222222222222222222222",
+		Amount:   "1",
+	}
+
+	_, err := s.Quote(context.Background(), req)
+	if !errors.Is(err, ErrInsufficientFunds) {
+		t.Fatalf("expected ErrInsufficientFunds, got: %v", err)
 	}
 }
