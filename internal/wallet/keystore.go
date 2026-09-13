@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
@@ -46,9 +47,10 @@ func (km *KeystoreManager) keystorePath() string {
 }
 
 // ValidatePassword enforces:
-// Password must be 12 to 128 bytes, spaces allowed, never trimmed.
+// Password must be 12 to 128 characters, spaces allowed, never trimmed.
 func ValidatePassword(password string) error {
-	if len(password) < 12 || len(password) > 128 {
+	count := utf8.RuneCountInString(password)
+	if count < 12 || count > 128 {
 		return ErrInvalidPassword
 	}
 	return nil
@@ -277,9 +279,7 @@ func (km *KeystoreManager) Import(mnemonic, password string) (*ImportResponse, e
 
 // Backup verifies the password by decrypting, then returns the raw encrypted keystore JSON object.
 func (km *KeystoreManager) Backup(password string) (json.RawMessage, error) {
-	if err := ValidatePassword(password); err != nil {
-		return nil, err
-	}
+	// Existing keystores may use passwords accepted by earlier creation rules.
 	km.mu.Lock()
 	data, err := os.ReadFile(km.keystorePath())
 	km.mu.Unlock()
@@ -307,9 +307,7 @@ func (km *KeystoreManager) Backup(password string) (json.RawMessage, error) {
 // DecryptKey decrypts the keystore file using the provided password.
 // The caller is responsible for wiping the returned private key after use.
 func (km *KeystoreManager) DecryptKey(password string) (*keystore.Key, error) {
-	if err := ValidatePassword(password); err != nil {
-		return nil, err
-	}
+	// Existing keystores may use passwords accepted by earlier creation rules.
 	km.mu.Lock()
 	data, err := os.ReadFile(km.keystorePath())
 	km.mu.Unlock()

@@ -72,7 +72,7 @@ func TestSepoliaExchangeReadOnly(t *testing.T) {
 		}
 		amount := quoted[0].(*big.Int)
 		if amount.Sign() > 0 {
-			found++
+			found += 1
 			t.Logf("fee %d pool %s: 0.000001 WETH -> %s test USDC (read-only quote)", fee, pool.Hex(), FormatUnits(amount, 6))
 		}
 	}

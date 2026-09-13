@@ -8,7 +8,7 @@ import (
 var (
 	ErrWalletExists                 = errors.New("錢包已存在，無法覆寫")
 	ErrWalletNotFound               = errors.New("尚未建立或匯入錢包")
-	ErrInvalidPassword              = errors.New("密碼長度必須介於 12 至 128 位元組")
+	ErrInvalidPassword              = errors.New("密碼長度必須介於 12 至 128 字元")
 	ErrPasswordMismatch             = errors.New("密碼錯誤，無法解密金鑰")
 	ErrInvalidMnemonic              = errors.New("助記詞格式不正確或校驗失敗")
 	ErrInvalidAddress               = errors.New("地址格式不正確，請輸入 0x 開頭的 40 位十六進位地址")
@@ -142,4 +142,5 @@ type JournalRecord struct {
 	Confirmations string    `json:"confirmations,omitempty"`
 	FeeETH        string    `json:"feeEth,omitempty"`
 	Error         string    `json:"error,omitempty"`
+	Version       uint64    `json:"version,omitempty"`
 }

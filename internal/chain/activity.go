@@ -214,7 +214,7 @@ func (c *Client) DiscoverActivity(ctx context.Context, owner common.Address, fro
 			ids = append(ids, id.Hex())
 		}
 	}
-	for n := from; n <= end; n++ {
+	for n := from; n <= end; n += 1 {
 		b, err := c.rpc.BlockByNumber(ctx, new(big.Int).SetUint64(n))
 		if err != nil {
 			return nil, 0, 0, rpcError(err)

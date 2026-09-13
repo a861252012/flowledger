@@ -55,6 +55,9 @@ func (jm *JournalManager) load() error {
 		if record == nil {
 			return errors.New("交易日誌包含空紀錄")
 		}
+		if record.Version == 0 {
+			record.Version = 1
+		}
 		raw, err := hexutil.Decode(record.SignedRaw)
 		if err != nil {
 			return errors.New("交易日誌已損毀")
@@ -107,20 +110,24 @@ func (jm *JournalManager) FindByHash(hash string) *JournalRecord {
 }
 
 // AppendAtomic persists a new record atomically. Refuses if journal exceeds 1000 entries.
-func (jm *JournalManager) AppendAtomic(record *JournalRecord) error {
+// Returns the assigned version number on success.
+func (jm *JournalManager) AppendAtomic(record *JournalRecord) (uint64, error) {
 	jm.mu.Lock()
 	defer jm.mu.Unlock()
 
 	if len(jm.records) >= 1000 {
-		return ErrJournalFull
+		return 0, ErrJournalFull
 	}
 
-	newRecords := append(jm.records, record)
+	recordCopy := *record
+	recordCopy.Version = 1
+	record.Version = 1
+	newRecords := append(jm.records, &recordCopy)
 	if err := jm.atomicSave(newRecords); err != nil {
-		return err
+		return 0, err
 	}
 	jm.records = newRecords
-	return nil
+	return recordCopy.Version, nil
 }
 
 // UpdateStateAtomic updates the state and metadata of a record atomically.
@@ -138,6 +145,7 @@ func (jm *JournalManager) UpdateStateAtomic(hash string, state string, confirmat
 			copy.Confirmations = confirmations
 			copy.FeeETH = feeEth
 			copy.Error = txErr
+			copy.Version += 1
 			found = true
 		}
 		next[i] = &copy
@@ -181,19 +189,84 @@ func (jm *JournalManager) ListHistory() []HistoryItem {
 	return items
 }
 
-// RefreshHashes includes outstanding transactions and the latest 20 mined records for reorg checks.
-func (jm *JournalManager) RefreshHashes() []string {
+type RefreshItem struct {
+	Hash    string
+	Version uint64
+	State   string
+}
+
+// RefreshItems includes outstanding transactions and the latest 20 mined records for reorg checks.
+func (jm *JournalManager) RefreshItems() []RefreshItem {
 	jm.mu.Lock()
 	defer jm.mu.Unlock()
 
-	var hashes []string
-	for i := len(jm.records) - 1; i >= 0; i-- {
+	var items []RefreshItem
+	for i := len(jm.records) - 1; i >= 0; i -= 1 {
 		r := jm.records[i]
 		if i >= len(jm.records)-20 || (r.State != "succeeded" && r.State != "reverted") {
-			hashes = append(hashes, r.Hash)
+			items = append(items, RefreshItem{
+				Hash:    r.Hash,
+				Version: r.Version,
+				State:   r.State,
+			})
 		}
 	}
+	return items
+}
+
+// RefreshHashes includes outstanding transactions and the latest 20 mined records for reorg checks.
+func (jm *JournalManager) RefreshHashes() []string {
+	items := jm.RefreshItems()
+	hashes := make([]string, len(items))
+	for i, item := range items {
+		hashes[i] = item.Hash
+	}
 	return hashes
+}
+
+// UpdateStateAtomicIfVersion updates record state atomically only if the current version matches expectedVersion
+// while allowing fresh observations of chain reorganizations.
+func (jm *JournalManager) UpdateStateAtomicIfVersion(hash string, expectedVersion uint64, state string, confirmations string, feeEth string, txErr string) (bool, error) {
+	jm.mu.Lock()
+	defer jm.mu.Unlock()
+
+	next := make([]*JournalRecord, len(jm.records))
+	found := false
+	var target *JournalRecord
+	for i, record := range jm.records {
+		copy := *record
+		if copy.Hash == hash {
+			target = &copy
+			found = true
+		}
+		next[i] = &copy
+	}
+	if !found {
+		return false, errors.New("找不到欲更新的交易紀錄")
+	}
+
+	// Stale check: if record was modified concurrently, do not overwrite with stale result
+	if target.Version != expectedVersion {
+		return false, nil
+	}
+
+	// No-op check: if record state and metadata are unchanged, avoid redundant disk writes
+	if target.State == state && target.Confirmations == confirmations && target.FeeETH == feeEth && target.Error == txErr {
+		return true, nil
+	}
+
+	target.State = state
+	target.UpdatedAt = time.Now().UTC()
+	target.Confirmations = confirmations
+	target.FeeETH = feeEth
+	target.Error = txErr
+	target.Version += 1
+
+	if err := jm.atomicSave(next); err != nil {
+		return false, err
+	}
+	jm.records = next
+	return true, nil
 }
 
 func (jm *JournalManager) atomicSave(records []*JournalRecord) error {

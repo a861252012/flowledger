@@ -81,7 +81,7 @@ func (s *Service) addActivityHashes(ids []string) (int, error) {
 		if !seen[id] {
 			old = append(old, id)
 			seen[id] = true
-			count++
+			count += 1
 		}
 	}
 	if len(old) > 1000 {
@@ -168,7 +168,7 @@ func (s *Service) Activity(ctx context.Context, page int) (*ActivityResponse, er
 		}
 	}
 	history := s.journal.ListHistory()
-	for i := len(history) - 1; i >= 0; i-- {
+	for i := len(history) - 1; i >= 0; i -= 1 {
 		item := history[i]
 		if !seen[item.Hash] {
 			seen[item.Hash] = true
@@ -191,7 +191,7 @@ func (s *Service) Activity(ctx context.Context, page int) (*ActivityResponse, er
 	response := &ActivityResponse{Page: page, Pages: pages, TotalTransactions: len(unique), Transactions: make([]*chain.Activity, end-begin), Totals: []ActivityTotal{}}
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 4)
-	for i := begin; i < end; i++ {
+	for i := begin; i < end; i += 1 {
 		hash := unique[len(unique)-1-i]
 		index := i - begin
 		wg.Add(1)

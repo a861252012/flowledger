@@ -12,7 +12,7 @@ docker compose run --rm --no-deps app go mod download
 docker compose up -d
 ```
 
-Open <http://localhost:8090>. The host port binds only to `127.0.0.1`. Optional settings are in `.env.example`; never commit RPC credentials. `WALLET_DIR=/data/wallet` uses the dedicated `wallet_data` volume. The existing PostgreSQL service is provisioned but is **not used by the wallet**; wallet persistence uses an encrypted keystore and an atomic transaction journal.
+Open <http://localhost:8090>. The host port binds only to `127.0.0.1`. Optional settings are in `.env.example`; never commit RPC credentials. `WALLET_DIR=/data/wallet` uses the dedicated `wallet_data` volume. Wallet persistence uses an encrypted keystore and an atomic transaction journal.
 
 ```sh
 docker compose ps
@@ -24,7 +24,7 @@ Source and embedded HTML/CSS/JS changes require `restart app`. Changed Compose e
 
 ## Use the wallet
 
-1. Create a wallet with a password, or restore an English BIP-39 test mnemonic. Passwords must be 12–128 UTF-8 bytes; spaces are preserved. The UI requires at least 12 characters.
+1. Create a wallet with a password, or restore an English BIP-39 test mnemonic. New wallet passwords must contain 12–128 Unicode code points in both the UI and backend; spaces are preserved. Existing keystores remain decryptable and exportable with their original passwords, including those accepted under the previous byte-count rule.
 2. Write down the generated 12 words **offline and in order**. They are displayed once and never saved in plaintext. Do not send them to an AI, logs, screenshots, or chat. Confirm backup to clear them from the screen.
 3. Fund the displayed address with **Sepolia ETH** from a testnet faucet. The dashboard links to [Google's Sepolia faucet](https://cloud.google.com/application/web3/faucet/ethereum/sepolia), [Ethereum's faucet list](https://ethereum.org/developers/docs/networks/#sepolia), and [Circle's test USDC faucet](https://faucet.circle.com/). External services may require login, verification or impose limits. The app does not provide test assets. ETH is required for gas even when transferring tokens.
 4. Enter a recipient and amount, request a quote, and verify the network, recipient, asset contract, exact amount and maximum gas fee. Enter the wallet password to sign and broadcast.
@@ -96,6 +96,23 @@ docker compose run --rm --no-deps app go vet ./...
 Tests use temporary wallets, published mnemonic fixtures and local mock RPCs. They cover derivation/restore, exact units, keystore encryption, input guards, ETH/token signed payloads, finite allowance/revocation, changed chain/nonce/funds, concurrent duplicate submissions, persistence failure, restart/rebroadcast identity and HTTP origin/CSRF restrictions. Test KDF parameters are deliberately reduced; runtime uses geth standard parameters.
 
 **Mock tests are not Sepolia evidence.** A real end-to-end acceptance requires a user-created/funded test wallet and an actual transaction hash with a Sepolia receipt. No such outgoing transaction is claimed solely because tests pass. Existing read-only Sepolia lookups and UI fixture checks are separate evidence.
+
+### On-chain automated broadcast & receipt verification script
+
+The repository includes `scripts/send_and_verify.sh` for balance checks, fee quoting, on-chain broadcasting, and receipt confirmation:
+
+```sh
+# One-click balance check and self-transfer once funded:
+./scripts/send_and_verify.sh
+
+# Test fee quoting and zero-balance guard without broadcasting:
+./scripts/send_and_verify.sh --test-quote
+
+# Verify receipt and confirmation count for an existing transaction hash:
+./scripts/send_and_verify.sh --hash 0xadfc05c5d4cf80c8c6b52f3a9eaa73e3c661b7a8d971d6cc57eabadb4677d22c
+```
+
+When run against an unfunded wallet (0 ETH), the script reports current block height, warns that gas cannot be covered, and prints direct links to human-verified Sepolia faucets (Google Cloud Web3, pk910 PoW, Ethereum.org, Circle USDC). Using `--test-quote` tests the quote API and confirms the zero-balance guard directly against the running node. Once funded, it quotes, signs with the wallet password, broadcasts, and polls `/api/transactions/{hash}` until the canonical receipt is mined.
 
 ## Code and references
 

@@ -144,6 +144,12 @@
     event.preventDefault();
     const form = event.currentTarget;
     $('setup-error').hidden = true;
+    const passwordLength = Array.from($('setup-password').value).length;
+    if (passwordLength < 12 || passwordLength > 128) {
+      showWalletError('setup-error', new Error('密碼長度必須介於 12 至 128 字元'));
+      $('setup-password').focus();
+      return;
+    }
     if ($('setup-password').value !== $('confirm-password').value) {
       showWalletError('setup-error', new Error('兩次密碼不同，請重新確認。'));
       $('confirm-password').focus();
@@ -194,6 +200,14 @@
     try { await navigator.clipboard.writeText(walletState.address); $('copy-wallet-address').textContent = '已複製'; }
     catch { showWalletError('wallet-error', new Error('無法複製，請選取上方完整地址手動複製。')); }
     setTimeout(() => { $('copy-wallet-address').textContent = '複製地址'; }, 2500);
+  });
+  $('claim-test-eth').addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(walletState.address);
+      $('faucet-status').textContent = '地址已複製。請在 Google 水龍頭貼上地址並申請；完成後按「我已領取，查詢餘額」。';
+    } catch {
+      $('faucet-status').textContent = '無法自動複製，請手動複製上方收款地址，在 Google 水龍頭貼上並申請。';
+    }
   });
   $('refresh-wallet').addEventListener('click', refreshWallet);
   $('check-funding').addEventListener('click', refreshWallet);
@@ -449,8 +463,8 @@
     finally { activityLoading = false; $('activity-refresh').disabled = false; }
   }
   $('activity-refresh').addEventListener('click',refreshActivity);
-  $('activity-prev').addEventListener('click',()=>{if(!activityLoading){activityPage--;refreshActivity();}});
-  $('activity-next').addEventListener('click',()=>{if(!activityLoading){activityPage++;refreshActivity();}});
+  $('activity-prev').addEventListener('click',()=>{if(!activityLoading){activityPage -= 1;refreshActivity();}});
+  $('activity-next').addEventListener('click',()=>{if(!activityLoading){activityPage += 1;refreshActivity();}});
   $('activity-import-form').addEventListener('submit', async event => {
     event.preventDefault(); const button = event.currentTarget.querySelector('button');
     if (button.disabled) return;
