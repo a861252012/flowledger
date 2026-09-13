@@ -1,0 +1,273 @@
+package web
+
+import (
+	"bytes"
+	"encoding/json"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/a861252012/flowledger/internal/chain"
+	"github.com/a861252012/flowledger/internal/wallet"
+)
+
+func TestRoutesAndInputErrors(t *testing.T) {
+	// Invalid input must be rejected without contacting this unreachable RPC.
+	c, err := chain.New("http://127.0.0.1:1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	h, err := New(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		method, path, contains string
+		status                 int
+	}{
+		{"GET", "/", "FlowLedger", 200}, {"GET", "/static/app.css", ":root", 200},
+		{"GET", "/static/app.js", "refreshNetwork", 200}, {"GET", "/healthz", "wallet", 200},
+		{"GET", "/api/balance?address=invalid", "地址格式", 400},
+		{"GET", "/api/transactions/bad", "交易雜湊格式", 400},
+		{"POST", "/api/network", "Method Not Allowed", 405}, {"GET", "/missing", "404", 404},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, httptest.NewRequest(tc.method, tc.path, nil))
+			if w.Code != tc.status || !strings.Contains(w.Body.String(), tc.contains) {
+				t.Fatalf("%d %s", w.Code, w.Body.String())
+			}
+			if w.Header().Get("Content-Security-Policy") == "" {
+				t.Fatal("missing CSP")
+			}
+		})
+	}
+}
+
+func TestWalletSecurityAndRestrictions(t *testing.T) {
+	c, err := chain.New("http://127.0.0.1:1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	dir := t.TempDir()
+	ws, err := wallet.NewService(c, dir, 2, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Close()
+
+	h, err := New(c, ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	csrfToken := ws.CSRFToken()
+
+	// 1. Host validation
+	t.Run("host validation", func(t *testing.T) {
+		// Invalid host rejected
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "http://localhost:8090/api/wallet", nil)
+		req.Host = "evil-domain.com:8090"
+		h.ServeHTTP(w, req)
+		if w.Code != 400 {
+			t.Fatalf("expected 400 for evil host, got %d", w.Code)
+		}
+
+		// Allowed host accepted
+		w2 := httptest.NewRecorder()
+		req2 := httptest.NewRequest("GET", "http://localhost:8090/api/wallet", nil)
+		req2.Host = "127.0.0.1:8090"
+		h.ServeHTTP(w2, req2)
+		if w2.Code != 200 {
+			t.Fatalf("expected 200 for 127.0.0.1 host, got %d", w2.Code)
+		}
+	})
+
+	// 2. Cross-origin rejection
+	t.Run("origin and sec-fetch-site", func(t *testing.T) {
+		// Cross-site Sec-Fetch-Site rejected
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "http://localhost:8090/api/wallet", nil)
+		req.Header.Set("Sec-Fetch-Site", "cross-site")
+		h.ServeHTTP(w, req)
+		if w.Code != 403 {
+			t.Fatalf("expected 403 for cross-site, got %d", w.Code)
+		}
+
+		// Untrusted Origin rejected
+		w2 := httptest.NewRecorder()
+		req2 := httptest.NewRequest("GET", "http://localhost:8090/api/wallet", nil)
+		req2.Header.Set("Origin", "https://attacker.org")
+		h.ServeHTTP(w2, req2)
+		if w2.Code != 403 {
+			t.Fatalf("expected 403 for attacker origin, got %d", w2.Code)
+		}
+	})
+
+	// 3. CSRF protection
+	t.Run("csrf protection", func(t *testing.T) {
+		body := bytes.NewBufferString(`{"password":"test-password-123"}`)
+		// Missing CSRF
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest("POST", "http://localhost:8090/api/wallet/create", body)
+		req.Header.Set("Content-Type", "application/json")
+		h.ServeHTTP(w, req)
+		if w.Code != 403 {
+			t.Fatalf("expected 403 for missing CSRF, got %d", w.Code)
+		}
+
+		// Invalid CSRF
+		body2 := bytes.NewBufferString(`{"password":"test-password-123"}`)
+		w2 := httptest.NewRecorder()
+		req2 := httptest.NewRequest("POST", "http://localhost:8090/api/wallet/create", body2)
+		req2.Header.Set("Content-Type", "application/json")
+		req2.Header.Set("X-Wallet-CSRF", "bad-token")
+		h.ServeHTTP(w2, req2)
+		if w2.Code != 403 {
+			t.Fatalf("expected 403 for invalid CSRF, got %d", w2.Code)
+		}
+	})
+
+	// 4. Content-Type and Body size & trailing input restrictions
+	t.Run("body restrictions", func(t *testing.T) {
+		// Wrong Content-Type
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest("POST", "http://localhost:8090/api/wallet/create", bytes.NewBufferString(`{"password":"test-password-123"}`))
+		req.Header.Set("Content-Type", "text/plain")
+		req.Header.Set("X-Wallet-CSRF", csrfToken)
+		h.ServeHTTP(w, req)
+		if w.Code != 400 {
+			t.Fatalf("expected 400 for text/plain, got %d", w.Code)
+		}
+
+		// Trailing input
+		w2 := httptest.NewRecorder()
+		req2 := httptest.NewRequest("POST", "http://localhost:8090/api/wallet/create", bytes.NewBufferString(`{"password":"test-password-123"} trailing`))
+		req2.Header.Set("Content-Type", "application/json")
+		req2.Header.Set("X-Wallet-CSRF", csrfToken)
+		h.ServeHTTP(w2, req2)
+		if w2.Code != 400 {
+			t.Fatalf("expected 400 for trailing input, got %d", w2.Code)
+		}
+
+		// Unknown fields
+		w3 := httptest.NewRecorder()
+		req3 := httptest.NewRequest("POST", "http://localhost:8090/api/wallet/create", bytes.NewBufferString(`{"password":"test-password-123","unknown":true}`))
+		req3.Header.Set("Content-Type", "application/json")
+		req3.Header.Set("X-Wallet-CSRF", csrfToken)
+		h.ServeHTTP(w3, req3)
+		if w3.Code != 400 {
+			t.Fatalf("expected 400 for unknown fields, got %d", w3.Code)
+		}
+
+		// Body > 16KiB
+		hugePass := strings.Repeat("x", 20*1024)
+		payload, _ := json.Marshal(map[string]string{"password": hugePass})
+		w4 := httptest.NewRecorder()
+		req4 := httptest.NewRequest("POST", "http://localhost:8090/api/wallet/create", bytes.NewReader(payload))
+		req4.Header.Set("Content-Type", "application/json")
+		req4.Header.Set("X-Wallet-CSRF", csrfToken)
+		h.ServeHTTP(w4, req4)
+		if w4.Code != 400 {
+			t.Fatalf("expected 400 for body > 16KiB, got %d", w4.Code)
+		}
+	})
+}
+
+func TestWalletRejectsSameSiteDifferentOriginAndAmbiguousJSON(t *testing.T) {
+	c, err := chain.New("http://127.0.0.1:1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	ws, err := wallet.NewService(c, t.TempDir(), 2, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Close()
+	h, err := New(c, ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		origin, ctype, body string
+		status              int
+	}{
+		{"http://localhost:9999", "application/json", `{"password":"fixture-password-123"}`, 403},
+		{"http://127.0.0.1:8090", "application/json", `{"password":"fixture-password-123"}`, 403},
+		{"http://localhost:8090", "application/json-invalid", `{}`, 400},
+		{"http://localhost:8090", "application/json", `{} {}`, 400},
+		{"null", "application/json", `{}`, 403},
+	} {
+		req := httptest.NewRequest("POST", "http://localhost:8090/api/wallet/create", strings.NewReader(tc.body))
+		req.Header.Set("Origin", tc.origin)
+		req.Header.Set("Content-Type", tc.ctype)
+		req.Header.Set("X-Wallet-CSRF", ws.CSRFToken())
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != tc.status {
+			t.Fatalf("%+v got %d %s", tc, w.Code, w.Body.String())
+		}
+	}
+}
+
+func TestActivityRoutesStayLocalAndExportExactCSV(t *testing.T) {
+	c, err := chain.New("http://127.0.0.1:1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	ws, err := wallet.NewService(c, t.TempDir(), 2, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Close()
+	if _, err := ws.Import("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", "fixture-password-123"); err != nil {
+		t.Fatal(err)
+	}
+	handler, err := New(c, ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/api/wallet/activity/import", "/api/wallet/activity/sync"} {
+		req := httptest.NewRequest("POST", "http://localhost:8090"+path, strings.NewReader(`{}`))
+		req.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, req)
+		if response.Code != 403 {
+			t.Fatalf("missing CSRF accepted: %s %d", path, response.Code)
+		}
+		req = httptest.NewRequest("POST", "http://localhost:8090"+path, strings.NewReader(`{}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Wallet-CSRF", ws.CSRFToken())
+		req.Header.Set("Origin", "http://localhost:9999")
+		response = httptest.NewRecorder()
+		handler.ServeHTTP(response, req)
+		if response.Code != 403 {
+			t.Fatalf("cross-origin accepted: %s", path)
+		}
+	}
+	for _, path := range []string{"/api/wallet/activity?page=0", "/api/wallet/activity?page=9999999999999999999999"} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest("GET", "http://localhost:8090"+path, nil))
+		if response.Code != 400 {
+			t.Fatalf("invalid page accepted: %s", path)
+		}
+	}
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest("GET", "http://localhost:8090/api/wallet/activity?format=csv", nil))
+	if response.Code != 200 || !strings.HasPrefix(response.Header().Get("Content-Type"), "text/csv") || !strings.Contains(response.Body.String(), "amount_raw") || strings.Contains(response.Body.String(), "fixture-password") {
+		t.Fatalf("bad CSV: %d %s", response.Code, response.Body.String())
+	}
+	response = httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "http://localhost:8090/api/wallet/activity?format=csv", nil)
+	req.Host = "example.com"
+	handler.ServeHTTP(response, req)
+	if response.Code != 400 {
+		t.Fatal("foreign host accessed export")
+	}
+}
