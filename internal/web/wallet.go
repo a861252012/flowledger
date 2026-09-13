@@ -1,0 +1,377 @@
+package web
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"mime"
+	"net"
+	"net/http"
+	"net/url"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/a861252012/flowledger/internal/chain"
+	"github.com/a861252012/flowledger/internal/wallet"
+)
+
+func isValidHost(host string) bool {
+	h, _, err := net.SplitHostPort(host)
+	if err != nil {
+		h = host
+	}
+	h = strings.Trim(h, "[]")
+	return h == "localhost" || h == "127.0.0.1" || h == "::1"
+}
+
+func decodeStrictJSON(w http.ResponseWriter, r *http.Request, dst any) error {
+	ct, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || ct != "application/json" {
+		return errors.New("Content-Type 必須是 application/json")
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 16*1024)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(dst); err != nil {
+		return errors.New("請求資料格式錯誤或含有未定義欄位")
+	}
+	var trailing any
+	if err := dec.Decode(&trailing); !errors.Is(err, io.EOF) {
+		return errors.New("請求結尾含有多餘資料")
+	}
+	return nil
+}
+
+func registerWalletRoutes(mux *http.ServeMux, ws *wallet.Service) {
+	if ws == nil {
+		return
+	}
+
+	// Security filter for all wallet endpoints
+	walletFilter := func(handler http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			// Host check (localhost, 127.0.0.1, [::1])
+			if !isValidHost(r.Host) {
+				respondWallet(w, http.StatusBadRequest, nil, errors.New("無效的 Host 標頭，僅允許本機存取"))
+				return
+			}
+
+			// Reject cross-origin
+			if sfs := r.Header.Get("Sec-Fetch-Site"); sfs == "cross-site" {
+				respondWallet(w, http.StatusForbidden, nil, errors.New("跨來源請求已被拒絕"))
+				return
+			}
+			if origin := r.Header.Get("Origin"); origin != "" {
+				u, err := url.Parse(origin)
+				scheme := "http"
+				if r.TLS != nil {
+					scheme = "https"
+				}
+				if err != nil || u.Scheme != scheme || u.Host != r.Host || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
+					respondWallet(w, http.StatusForbidden, nil, errors.New("跨來源請求已被拒絕"))
+					return
+				}
+			}
+
+			// CSRF protection for POST requests
+			if r.Method == http.MethodPost {
+				csrf := r.Header.Get("X-Wallet-CSRF")
+				if csrf == "" || csrf != ws.CSRFToken() {
+					respondWallet(w, http.StatusForbidden, nil, errors.New("缺少或無效的 CSRF Token (X-Wallet-CSRF)"))
+					return
+				}
+			}
+
+			handler(w, r)
+		}
+	}
+
+	// GET /api/wallet
+	mux.HandleFunc("GET /api/wallet", walletFilter(func(w http.ResponseWriter, r *http.Request) {
+		info, err := ws.Status()
+		if err != nil {
+			respondWallet(w, http.StatusInternalServerError, nil, err)
+			return
+		}
+		respondWallet(w, http.StatusOK, info, nil)
+	}))
+
+	// POST /api/wallet/create
+	mux.HandleFunc("POST /api/wallet/create", walletFilter(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Password string `json:"password"`
+		}
+		if err := decodeStrictJSON(w, r, &req); err != nil {
+			respondWallet(w, http.StatusBadRequest, nil, err)
+			return
+		}
+		res, err := ws.Create(req.Password)
+		if err != nil {
+			status := http.StatusBadRequest
+			if errors.Is(err, wallet.ErrWalletExists) {
+				status = http.StatusConflict
+			} else if errors.Is(err, wallet.ErrTooManyScryptRequests) {
+				status = http.StatusServiceUnavailable
+			}
+			respondWallet(w, status, nil, err)
+			return
+		}
+		respondWallet(w, http.StatusOK, res, nil)
+	}))
+
+	// POST /api/wallet/import
+	mux.HandleFunc("POST /api/wallet/import", walletFilter(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Password string `json:"password"`
+			Mnemonic string `json:"mnemonic"`
+		}
+		if err := decodeStrictJSON(w, r, &req); err != nil {
+			respondWallet(w, http.StatusBadRequest, nil, err)
+			return
+		}
+		res, err := ws.Import(req.Mnemonic, req.Password)
+		if err != nil {
+			status := http.StatusBadRequest
+			if errors.Is(err, wallet.ErrWalletExists) {
+				status = http.StatusConflict
+			} else if errors.Is(err, wallet.ErrTooManyScryptRequests) {
+				status = http.StatusServiceUnavailable
+			}
+			respondWallet(w, status, nil, err)
+			return
+		}
+		respondWallet(w, http.StatusOK, res, nil)
+	}))
+
+	// POST /api/wallet/backup
+	mux.HandleFunc("POST /api/wallet/backup", walletFilter(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Password string `json:"password"`
+		}
+		if err := decodeStrictJSON(w, r, &req); err != nil {
+			respondWallet(w, http.StatusBadRequest, nil, err)
+			return
+		}
+		res, err := ws.Backup(req.Password)
+		if err != nil {
+			status := http.StatusBadRequest
+			if errors.Is(err, wallet.ErrPasswordMismatch) {
+				status = http.StatusUnauthorized
+			} else if errors.Is(err, wallet.ErrWalletNotFound) {
+				status = http.StatusNotFound
+			} else if errors.Is(err, wallet.ErrTooManyScryptRequests) {
+				status = http.StatusServiceUnavailable
+			}
+			respondWallet(w, status, nil, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(res)
+	}))
+
+	// POST /api/wallet/token
+	mux.HandleFunc("POST /api/wallet/token", walletFilter(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Contract string `json:"contract"`
+		}
+		if err := decodeStrictJSON(w, r, &req); err != nil {
+			respondWallet(w, http.StatusBadRequest, nil, err)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+		defer cancel()
+		info, err := ws.Token(ctx, req.Contract)
+		if err != nil {
+			status := http.StatusBadRequest
+			if errors.Is(err, wallet.ErrWalletNotFound) {
+				status = http.StatusNotFound
+			} else if errors.Is(err, chain.ErrUnavailable) {
+				status = http.StatusBadGateway
+			} else if errors.Is(err, chain.ErrTimeout) {
+				status = http.StatusGatewayTimeout
+			}
+			respondWallet(w, status, nil, err)
+			return
+		}
+		respondWallet(w, http.StatusOK, info, nil)
+	}))
+
+	// POST /api/wallet/quote
+	mux.HandleFunc("POST /api/wallet/quote", walletFilter(func(w http.ResponseWriter, r *http.Request) {
+		var req wallet.QuoteRequest
+		if err := decodeStrictJSON(w, r, &req); err != nil {
+			respondWallet(w, http.StatusBadRequest, nil, err)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 40*time.Second)
+		defer cancel()
+		quote, err := ws.Quote(ctx, &req)
+		if err != nil {
+			status := http.StatusBadRequest
+			switch {
+			case errors.Is(err, wallet.ErrTxInFlight), errors.Is(err, wallet.ErrApprovalRace):
+				status = http.StatusConflict
+			case errors.Is(err, wallet.ErrQuoteStorageFull):
+				status = http.StatusServiceUnavailable
+			case errors.Is(err, chain.ErrUnavailable):
+				status = http.StatusBadGateway
+			case errors.Is(err, chain.ErrTimeout):
+				status = http.StatusGatewayTimeout
+			}
+			respondWallet(w, status, nil, err)
+			return
+		}
+		respondWallet(w, http.StatusOK, quote, nil)
+	}))
+
+	// POST /api/wallet/send
+	mux.HandleFunc("POST /api/wallet/send", walletFilter(func(w http.ResponseWriter, r *http.Request) {
+		var req wallet.SendRequest
+		if err := decodeStrictJSON(w, r, &req); err != nil {
+			respondWallet(w, http.StatusBadRequest, nil, err)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 40*time.Second)
+		defer cancel()
+		res, err := ws.Send(ctx, req.QuoteID, req.Password)
+		if err != nil {
+			status := http.StatusBadRequest
+			switch {
+			case errors.Is(err, wallet.ErrPasswordMismatch):
+				status = http.StatusUnauthorized
+			case errors.Is(err, wallet.ErrTxInFlight), errors.Is(err, wallet.ErrNonceMismatch):
+				status = http.StatusConflict
+			case errors.Is(err, wallet.ErrJournalFull), errors.Is(err, wallet.ErrTooManyScryptRequests):
+				status = http.StatusServiceUnavailable
+			case errors.Is(err, chain.ErrUnavailable):
+				status = http.StatusBadGateway
+			case errors.Is(err, chain.ErrTimeout):
+				status = http.StatusGatewayTimeout
+			}
+			respondWallet(w, status, nil, err)
+			return
+		}
+		respondWallet(w, http.StatusOK, res, nil)
+	}))
+
+	// POST /api/wallet/retry
+	mux.HandleFunc("POST /api/wallet/retry", walletFilter(func(w http.ResponseWriter, r *http.Request) {
+		var req wallet.RetryRequest
+		if err := decodeStrictJSON(w, r, &req); err != nil {
+			respondWallet(w, http.StatusBadRequest, nil, err)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+		defer cancel()
+		res, err := ws.Retry(ctx, req.Hash)
+		if err != nil {
+			status := http.StatusBadRequest
+			switch {
+			case errors.Is(err, chain.ErrNotFound):
+				status = http.StatusNotFound
+			case errors.Is(err, chain.ErrUnavailable):
+				status = http.StatusBadGateway
+			case errors.Is(err, chain.ErrTimeout):
+				status = http.StatusGatewayTimeout
+			}
+			respondWallet(w, status, nil, err)
+			return
+		}
+		respondWallet(w, http.StatusOK, res, nil)
+	}))
+
+	mux.HandleFunc("POST /api/wallet/activity/import", walletFilter(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Hash string `json:"hash"`
+		}
+		if err := decodeStrictJSON(w, r, &req); err != nil {
+			respondWallet(w, 400, nil, err)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+		result, err := ws.ImportActivity(ctx, req.Hash)
+		if err != nil {
+			respondWallet(w, 400, nil, err)
+			return
+		}
+		respondWallet(w, 200, result, nil)
+	}))
+	mux.HandleFunc("POST /api/wallet/activity/sync", walletFilter(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			From      uint64   `json:"from"`
+			Contracts []string `json:"contracts,omitempty"`
+		}
+		if err := decodeStrictJSON(w, r, &req); err != nil {
+			respondWallet(w, 400, nil, err)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
+		defer cancel()
+		result, err := ws.SyncActivity(ctx, req.From, req.Contracts)
+		if err != nil {
+			respondWallet(w, 400, nil, err)
+			return
+		}
+		respondWallet(w, 200, result, nil)
+	}))
+	mux.HandleFunc("GET /api/wallet/activity", walletFilter(func(w http.ResponseWriter, r *http.Request) {
+		page := 1
+		if raw := r.URL.Query().Get("page"); raw != "" {
+			var err error
+			page, err = strconv.Atoi(raw)
+			if err != nil || page < 1 {
+				respondWallet(w, 400, nil, errors.New("頁碼格式錯誤"))
+				return
+			}
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 40*time.Second)
+		defer cancel()
+		result, err := ws.Activity(ctx, page)
+		if err != nil {
+			respondWallet(w, 400, nil, err)
+			return
+		}
+		if r.URL.Query().Get("format") == "csv" {
+			w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+			w.Header().Set("Content-Disposition", "attachment; filename=flowledger-sepolia-activity.csv")
+			_ = wallet.WriteActivityCSV(w, result)
+			return
+		}
+		respondWallet(w, 200, result, nil)
+	}))
+
+	// GET /api/wallet/history
+	mux.HandleFunc("GET /api/wallet/history", walletFilter(func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+		defer cancel()
+		history, err := ws.History(ctx)
+		if err != nil {
+			respondWallet(w, http.StatusInternalServerError, nil, err)
+			return
+		}
+		respondWallet(w, http.StatusOK, history, nil)
+	}))
+}
+
+func respondWallet(w http.ResponseWriter, status int, result any, err error) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	if err != nil {
+		var pathErr *os.PathError
+		if errors.As(err, &pathErr) {
+			err = errors.New("本機錢包儲存失敗，請檢查資料磁碟與權限")
+			status = http.StatusInternalServerError
+		}
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+	w.WriteHeader(status)
+	if result != nil {
+		_ = json.NewEncoder(w).Encode(result)
+	}
+}

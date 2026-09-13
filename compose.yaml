@@ -1,0 +1,47 @@
+name: flowledger
+
+services:
+  app:
+    build: .
+    init: true
+    environment:
+      HTTP_HOST: 0.0.0.0
+      PORT: "8090"
+      WALLET_DIR: /data/wallet
+      SEPOLIA_RPC_URL: ${SEPOLIA_RPC_URL:-https://ethereum-sepolia-rpc.publicnode.com}
+    ports:
+      - "127.0.0.1:${PORT:-8090}:8090"
+    volumes:
+      - .:/app
+      - go_modules:/go/pkg/mod
+      - go_build:/go/build-cache
+      - wallet_data:/data/wallet
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8090/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 120s
+
+  postgres:
+    image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+    environment:
+      POSTGRES_DB: flowledger
+      POSTGRES_USER: flowledger
+      POSTGRES_PASSWORD: flowledger_local_only
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flowledger -d flowledger"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  wallet_data:
+  postgres_data:
+  go_modules:
+  go_build:

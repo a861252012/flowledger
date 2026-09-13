@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="FlowLedger — Go Sepolia 錢包：本機金鑰、ETH 與 ERC-20 轉帳。">
+  <title>FlowLedger · Sepolia 錢包</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <link rel="stylesheet" href="/static/wallet.css">
+  <script src="/static/app.js" defer></script>
+  <script src="/static/wallet.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#overview">跳至主要內容</a>
+  <svg class="icon-defs" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+    <symbol id="i-wallet" viewBox="0 0 24 24"><path d="M20 8V5a2 2 0 0 0-2-2H6a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3h14V8H6a2 2 0 0 1 0-4"/><path d="M20 12h-5v5h5"/></symbol>
+    <symbol id="i-receipt" viewBox="0 0 24 24"><path d="M5 3l3 2 4-2 4 2 3-2v18l-3-2-4 2-4-2-3 2Z"/><path d="M9 9h6M9 13h6"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 6.1A8 8 0 0 1 20 12M4 12a8 8 0 0 0 13.9 5.9"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M14 3h7v7M21 3 10 14M10 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5"/></symbol>
+  </defs></svg>
+  <aside class="sidebar">
+    <a href="/" class="brand" aria-label="FlowLedger 首頁"><span class="mark" aria-hidden="true">f<span>↗</span></span>FlowLedger<span class="beta">DEV</span></a>
+    <div class="workspace"><span class="workspace-icon" aria-hidden="true">F</span><div>個人工作區<small>SEPOLIA SANDBOX</small></div></div>
+    <p class="nav-label">工作台</p>
+    <nav aria-label="主要導覽">
+      <a class="active" aria-current="location" href="#overview"><svg class="icon" aria-hidden="true"><use href="#i-grid"/></svg>我的錢包</a>
+      <a id="nav-send" href="#send-panel" hidden><svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg>發送資產</a>
+      <a id="nav-exchange" href="#exchange-panel" hidden>資產兌換</a>
+      <a id="nav-activity" href="#activity-panel" hidden>收支流水</a>
+      <a id="nav-history" href="#history-panel" hidden><svg class="icon" aria-hidden="true"><use href="#i-receipt"/></svg>交易紀錄</a>
+      <a href="#balance-panel"><svg class="icon" aria-hidden="true"><use href="#i-wallet"/></svg>地址餘額</a>
+      <a href="#transaction-panel"><svg class="icon" aria-hidden="true"><use href="#i-receipt"/></svg>交易查核</a>
+    </nav>
+    <div class="sidebar-bottom"><div class="sandbox-label">測試環境</div><strong>Ethereum Sepolia</strong><p>本機加密金鑰。<br>僅限 Sepolia 測試資產。</p><a href="https://github.com/a861252012/flowledger" target="_blank" rel="noopener noreferrer">GitHub 專案 <svg class="icon" aria-hidden="true"><use href="#i-link"/></svg></a></div>
+  </aside>
+  <main id="overview" tabindex="-1">
+    <header class="topbar"><span class="page-label">工作台 <span>/</span> <strong>我的錢包</strong></span><span class="chip">Sepolia 測試網</span></header>
+    <section class="wallet-intro"><div><p class="eyebrow">YOUR KEYS. YOUR TESTNET.</p><h1 id="page-title">你的鏈上錢包。</h1><p>在 Sepolia 收付款與兌換，依鏈上收據核對收支。</p></div><span class="chip">本機加密保存</span></section>
+    <div id="wallet-error" class="error" role="alert" hidden></div>
+    <div id="wallet-loading" class="panel" role="status">正在載入本機錢包…</div>
+    <section id="wallet-setup" class="panel setup-panel" aria-labelledby="setup-title" hidden>
+      <div class="setup-copy"><span class="panel-icon"><svg class="icon" aria-hidden="true"><use href="#i-wallet"/></svg></span><h2 id="setup-title">建立錢包，<br>開始體驗收付款。</h2><p>設定密碼、備份助記詞，就能開始使用。已有測試錢包，也可以用助記詞還原。</p><ul><li>助記詞用來還原錢包，請離線備份</li><li>助記詞只在建立時顯示一次</li><li>密碼用來保護本機錢包與確認交易</li></ul><p class="setup-warning">僅供 Sepolia 測試。請勿匯入持有真實資產的助記詞。</p><details id="wallet-advanced" class="advanced-info"><summary>進階資訊：帳戶與還原規格</summary><p>錢包使用 Go 在本機產生帳戶，並以密碼加密私鑰。</p><p>新錢包使用 12 個英文單字的 BIP-39 助記詞，依 BIP-44 路徑 <code>m/44'/60'/0'/0/0</code> 取得一個 Ethereum 地址。</p><p>還原使用相同路徑；其他路徑的地址不會自動載入。目前不支援額外密語（BIP-39 passphrase）。</p></details></div>
+      <div class="setup-form"><div class="segmented" aria-label="錢包設定方式"><button id="choose-create" class="selected" aria-pressed="true" type="button">建立新錢包</button><button id="choose-import" aria-pressed="false" type="button">還原錢包</button></div>
+      <form id="wallet-setup-form"><div id="mnemonic-input-group" hidden><label for="import-mnemonic">英文助記詞</label><textarea id="import-mnemonic" rows="3" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="mnemonic-hint"></textarea><p id="mnemonic-hint" class="field-hint">依原順序輸入，以空白分隔。只還原預設路徑的第一個 Ethereum 地址；若原錢包另設助記詞額外密語，目前無法還原。</p></div><label for="setup-password">錢包密碼</label><input id="setup-password" type="password" minlength="12" maxlength="128" autocomplete="new-password" required aria-describedby="password-hint"><p id="password-hint" class="field-hint">至少 12 字元，用於確認交易與保護這台電腦上的錢包。請另外備份助記詞，密碼無法取代它。</p><label for="confirm-password">再次輸入密碼</label><input id="confirm-password" type="password" minlength="12" maxlength="128" autocomplete="new-password" required><p id="setup-error" class="field-error" role="alert" hidden></p><button class="submit-button" id="setup-submit" type="submit">建立錢包</button></form></div>
+    </section>
+    <section id="mnemonic-backup" class="panel" aria-labelledby="backup-title" hidden><p class="eyebrow">BACK UP YOUR WALLET</p><h2 id="backup-title">先備份，再開始。</h2><p>請將這些單字依序離線抄下。擁有助記詞的人可以控制錢包；請勿傳給任何人或貼到 AI 對話。</p><ol id="mnemonic-words" class="mnemonic-grid"></ol><label class="check-label"><input id="backup-confirmed" type="checkbox">我已依序離線備份，知道關閉後不會再次顯示。</label><button id="finish-backup" class="submit-button" type="button" disabled>備份完成，進入錢包</button></section>
+    <section id="wallet-dashboard" hidden>
+      <div class="wallet-card"><div><p class="eyebrow">SEPOLIA ETH BALANCE</p><div id="wallet-balance" class="wallet-amount mono">— <small>ETH</small></div><p id="wallet-balance-time" class="wallet-caption">等待鏈上餘額</p></div><div class="wallet-address"><span>收款地址</span><p id="wallet-address" class="mono"></p><div class="wallet-card-actions"><button id="copy-wallet-address" type="button">複製地址</button><a id="wallet-explorer" target="_blank" rel="noopener noreferrer">在 Etherscan 查看 ↗</a></div><small>僅接收 Ethereum Sepolia 的 ETH 與代幣。</small></div></div>
+      <div class="wallet-toolbar"><button id="refresh-wallet" type="button" class="secondary">更新餘額與紀錄</button><details id="backup-controls"><summary>下載加密備份</summary><form id="backup-form"><label for="backup-password">輸入錢包密碼</label><input id="backup-password" type="password" autocomplete="current-password" required><button type="submit" class="secondary">下載加密備份檔</button><p id="backup-feedback" role="status"></p></form></details></div>
+      <section id="first-transaction" class="panel first-transaction" aria-labelledby="first-transaction-title">
+        <p class="eyebrow">YOUR FIRST ON-CHAIN TRANSACTION</p><h2 id="first-transaction-title">從測試幣開始，完成第一筆上鏈。</h2>
+        <ol class="first-transaction-steps">
+          <li><h3>領取測試幣</h3><p>複製上方收款地址，在水龍頭選擇 Ethereum Sepolia。領取 ETH 支付手續費，再領取測試 USDC 體驗代幣收付款。</p><div class="faucet-links"><a href="https://cloud.google.com/application/web3/faucet/ethereum/sepolia" target="_blank" rel="noopener noreferrer">領取 Sepolia ETH ↗</a><a href="https://faucet.circle.com/" target="_blank" rel="noopener noreferrer">領取 Circle 測試 USDC ↗</a><a href="https://ethereum.org/developers/docs/networks/#sepolia" target="_blank" rel="noopener noreferrer">其他 ETH 水龍頭 ↗</a></div><p class="field-hint">外部服務可能要求登入、驗證或限制領取次數。不需要購買測試幣，也不要提供助記詞或私鑰。</p><button id="check-funding" type="button" class="secondary">我已領取，查詢餘額</button><p id="funding-status" role="status">等待鏈上餘額。</p></li>
+          <li><h3>試一筆小額交易</h3><p>先把 0.000001 ETH 轉回自己的地址，體驗轉帳與查看結果。本金回到原地址，另付測試 ETH 手續費。</p><button id="prepare-self-transfer" type="button" class="secondary">填入小額自轉</button><p>接著可將 0.000001 ETH 包裝成 WETH，再到兌換區授權與交換測試 USDC。</p><button id="prepare-first-wrap" type="button" class="secondary">填入 WETH 包裝</button><p class="field-hint">按鈕只填入表單。請核對報價與最高費用，再輸入密碼簽署。</p></li>
+          <li><h3>用收據確認結果</h3><p>送出後更新交易紀錄，確認顯示「鏈上執行成功」，並開啟 Etherscan 核對交易雜湊、網路與收據。</p><div class="faucet-links"><a href="#history-panel">查看交易紀錄 →</a><a href="#activity-panel">核對收支與匯出 CSV →</a></div><p class="field-hint">顯示「已廣播」仍須等待區塊收錄。若結果待確認，先更新紀錄；需要重試時使用「重新廣播原交易」。</p></li>
+        </ol>
+      </section>
+      <div class="wallet-work-grid">
+        <section id="send-panel" class="panel" aria-labelledby="send-title" tabindex="-1"><div class="panel-heading"><span class="panel-icon"><svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></span><div><p class="eyebrow">SEND ON SEPOLIA</p><h2 id="send-title">發送資產</h2></div></div><form id="send-form"><label for="send-asset">資產</label><select id="send-asset"><option value="eth">Sepolia ETH</option></select><div id="token-action-group" hidden><label for="send-action">操作</label><select id="send-action"><option value="transfer">轉帳給收款人</option><option value="approve">授權地址使用代幣</option></select><p class="field-hint">授權會允許被授權地址花費指定數量。輸入 0 可撤銷；修改既有額度前須先歸零。</p></div><label for="send-to" id="send-to-label">收款地址</label><input id="send-to" class="mono" required autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="0x…"><label for="send-amount">金額</label><input id="send-amount" inputmode="decimal" required autocomplete="off" placeholder="0.001"><p id="send-asset-hint" class="field-hint">手續費另以 Sepolia ETH 支付。</p><button type="submit" class="submit-button">預估費用並核對</button><p id="send-error" class="field-error" role="alert" hidden></p></form></section>
+        <section class="panel" aria-labelledby="tokens-title"><div class="panel-heading"><span class="panel-icon"><svg class="icon" aria-hidden="true"><use href="#i-grid"/></svg></span><div><p class="eyebrow">YOUR TOKENS</p><h2 id="tokens-title">我的代幣</h2></div></div><p class="panel-description">輸入合約地址，查詢代幣並加入本次操作。代幣名稱由合約提供，請核對地址。</p><form id="token-form"><label for="token-contract">Sepolia 代幣合約</label><input id="token-contract" class="mono" placeholder="0x…" required autocomplete="off" autocapitalize="off" spellcheck="false"><button type="submit" class="secondary">查詢並加入</button><p id="token-error" class="field-error" role="alert" hidden></p></form><div id="token-list" class="token-list" role="status"><p class="muted">尚未加入代幣。</p></div></section>
+      </div>
+      <section id="exchange-panel" class="panel feature-panel" tabindex="-1">
+        <div class="panel-heading"><span class="panel-icon"><svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg></span><div><p class="eyebrow">EXCHANGE ON SEPOLIA</p><h2>資產兌換</h2></div></div>
+        <p class="panel-description">ETH 與 WETH 可 1:1 包裝／解包。WETH 與測試 USDC 使用 Uniswap V3 的鏈上交易池；測試網價格不代表美元價值。</p>
+        <form id="exchange-form"><label for="exchange-action">兌換方向</label><select id="exchange-action"><option value="wrap">ETH → WETH（包裝）</option><option value="unwrap">WETH → ETH（解包）</option><option value="weth-usdc">WETH → 測試 USDC</option><option value="usdc-weth">測試 USDC → WETH</option></select>
+        <label for="exchange-amount">支付數量</label><input id="exchange-amount" inputmode="decimal" autocomplete="off" placeholder="0.001" required>
+        <div id="swap-options" hidden><label for="swap-fee">交易池費率</label><select id="swap-fee"><option value="3000">0.3%</option><option value="500">0.05%</option><option value="100">0.01%</option><option value="10000">1%</option></select><label for="swap-slippage">允許滑價</label><select id="swap-slippage"><option value="50">0.5%</option><option value="100">1%</option><option value="10">0.1%</option><option value="500">5%</option></select><p class="field-hint">先授權本次支付數量，等待交易成功後再報價。已有非零額度時，可先撤銷。</p><div class="feature-actions"><button id="swap-approve" class="secondary" type="button">授權本次數量</button><button id="swap-revoke" class="secondary" type="button">撤銷兌換合約授權</button></div></div>
+        <p id="exchange-route" class="field-hint mono"></p><button id="exchange-submit" class="submit-button" type="submit">取得鏈上報價並核對</button><p id="exchange-error" class="field-error" role="alert" hidden></p></form>
+      </section>
+      <section id="activity-panel" class="panel feature-panel" tabindex="-1">
+        <div class="panel-heading"><span class="panel-icon"><svg class="icon" aria-hidden="true"><use href="#i-receipt"/></svg></span><div><p class="eyebrow">RECEIPT-BASED ACTIVITY</p><h2>收支流水</h2></div></div>
+        <p class="panel-description">送出的交易自動納入。同步每批 20 個區塊以找出 ETH 與已加入代幣的收款（含 WETH、測試 USDC），或貼上交易雜湊匯入舊交易。每頁 20 筆，依加入索引順序排列。</p>
+        <div class="feature-actions"><button id="activity-refresh" class="secondary" type="button">更新流水</button><a id="activity-csv" class="secondary" href="/api/wallet/activity?format=csv&amp;page=1" download>匯出本頁 CSV</a></div>
+        <form id="activity-sync-form"><label for="activity-from">起始區塊（留空查最近 20 個區塊）</label><input id="activity-from" type="text" inputmode="numeric" pattern="[0-9]+" placeholder="最近 20 個區塊"><button class="secondary" type="submit">同步鏈上收支</button></form>
+        <form id="activity-import-form"><label for="activity-hash">匯入交易雜湊</label><input id="activity-hash" class="mono" required pattern="0x[0-9a-fA-F]{64}" placeholder="0x…" autocomplete="off"><button class="secondary" type="submit">查核並匯入</button></form>
+        <p id="activity-feedback" role="status"></p><p id="activity-error" class="field-error" role="alert" hidden></p><div id="activity-totals"></div><div id="activity-list" role="status"><p class="muted">建立錢包後即可開始記錄。</p></div><div class="feature-actions"><button id="activity-prev" class="secondary" type="button" disabled>上一頁</button><span id="activity-page"></span><button id="activity-next" class="secondary" type="button" disabled>下一頁</button></div>
+        <p class="field-hint">合計只涵蓋本頁已查核交易，不是錢包餘額或完整帳務。部分收支可能未列入，請一併核對餘額。</p>
+        <details class="advanced-info"><summary>收支紀錄的範圍</summary><p>未收錄的區塊、一般合約內部 ETH 轉帳與非標準代幣可能未列入；WETH 解包另依 Withdrawal 事件辨識。ERC-20 收支以事件為依據。</p></details>
+      </section>
+      <section id="history-panel" class="panel" tabindex="-1"><div class="panel-heading"><span class="panel-icon"><svg class="icon" aria-hidden="true"><use href="#i-receipt"/></svg></span><div><p class="eyebrow">TRANSACTION ACTIVITY</p><h2>交易紀錄</h2></div></div><p class="panel-description">顯示由此錢包送出的操作。收款與已收錄交易的資產變動請看收支流水；狀態於更新時查核。</p><div id="wallet-history" role="status"><p class="muted">尚無交易。</p></div></section>
+    </section>
+    <dialog id="send-confirmation" aria-labelledby="confirm-title"><form id="confirm-send-form"><div class="dialog-heading"><div><p class="eyebrow">REVIEW BEFORE SIGNING</p><h2 id="confirm-title">確認這筆交易</h2></div><button id="cancel-send" class="secondary" type="button">取消</button></div><div id="quote-details"></div><p id="approval-warning" class="error" hidden>這筆操作會授權指定地址花費你的代幣，並不是轉帳。請確認被授權地址值得信任。</p><p class="field-hint">最高費用是上限，實際手續費依交易執行結果而定。報價逾時需重新預估。</p><label for="send-password">錢包密碼</label><input id="send-password" type="password" autocomplete="current-password" required><p id="confirm-error" class="field-error" role="alert" hidden></p><button id="confirm-send-button" class="submit-button" type="submit">簽署並送出至 Sepolia</button></form></dialog>
+    <div id="send-feedback" class="panel" role="status" hidden></div>
+    <div class="section-title"><h2>網路概況</h2><button id="refresh-network" class="secondary" type="button"><svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg><span>更新網路</span></button></div>
+    <div id="network-error" class="error" role="alert" hidden></div>
+    <section class="metrics" aria-label="網路狀態" aria-busy="true" id="network-metrics">
+      <article class="metric"><p>目前網路 <span class="tag">TESTNET</span></p><h3>Ethereum Sepolia</h3><small>Chain ID <span id="chain-id" class="mono">查詢中…</span></small></article>
+      <article class="metric"><p>最新區塊</p><h3 id="block-number" class="mono">—</h3><small id="block-time">等待鏈上資料</small></article>
+      <article class="metric"><p>RPC 連線</p><h3 id="network-state" role="status">查詢中…</h3><small id="checked-at">尚未取得資料</small></article>
+    </section>
+    <div class="section-title tools-title"><h2>查核工具</h2><span class="subtle-label">地址餘額 · 交易收據</span></div>
+    <div class="work-grid">
+      <section class="panel" id="balance-panel" aria-labelledby="balance-title" tabindex="-1">
+        <div class="panel-heading"><span class="panel-icon"><svg class="icon" aria-hidden="true"><use href="#i-wallet"/></svg></span><div><p class="eyebrow">BALANCE LOOKUP</p><h2 id="balance-title">地址餘額</h2></div><span class="panel-number" aria-hidden="true">01</span></div>
+        <p class="panel-description">查詢任意 Sepolia 地址的 ETH 餘額。</p>
+        <form id="balance-form" novalidate><label for="address">錢包或合約地址 <span>必填</span></label><input id="address" name="address" class="mono" type="text" placeholder="0x 開頭的 42 字元地址" pattern="0x[0-9a-fA-F]{40}" required autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="address-hint address-error"><p class="field-hint" id="address-hint">貼上完整的 Sepolia 收款地址。</p><p id="address-error" class="field-error" role="alert" hidden></p><button class="submit-button" type="submit"><span>查詢餘額</span><svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></button></form>
+        <div id="balance-result" class="result" role="status" aria-live="polite"><div class="empty-mark"><svg class="icon" aria-hidden="true"><use href="#i-wallet"/></svg></div><strong>你的第一筆查核，從這裡開始</strong><p>貼上公開地址，即可查看 ETH 餘額。</p></div>
+      </section>
+      <section class="panel" id="transaction-panel" aria-labelledby="transaction-title" tabindex="-1">
+        <div class="panel-heading"><span class="panel-icon"><svg class="icon" aria-hidden="true"><use href="#i-receipt"/></svg></span><div><p class="eyebrow">TRANSACTION CHECK</p><h2 id="transaction-title">交易查核</h2></div><span class="panel-number" aria-hidden="true">02</span></div>
+        <p class="panel-description">從交易收據，確認執行結果與實際費用。</p>
+        <form id="transaction-form" novalidate><label for="hash">交易雜湊 <span>必填</span></label><input id="hash" name="hash" class="mono" type="text" placeholder="0x 開頭的 66 字元雜湊" pattern="0x[0-9a-fA-F]{64}" required autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="hash-hint hash-error"><p class="field-hint" id="hash-hint">請從交易紀錄複製交易雜湊，這與收款地址不同。</p><p id="hash-error" class="field-error" role="alert" hidden></p><button class="submit-button" type="submit"><span>查詢交易</span><svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></button></form>
+        <div id="transaction-result" class="result" role="status" aria-live="polite"><div class="empty-mark"><svg class="icon" aria-hidden="true"><use href="#i-receipt"/></svg></div><strong>不只看成功，也看確認進度</strong><p>查詢交易結果、確認進度與實際手續費。</p></div>
+      </section>
+    </div>
+    <div class="scope-note"><span class="scope-tag">開發版本</span><p>已開放 Sepolia 收付款、ETH/WETH 包裝與解包、WETH/測試 USDC 兌換，以及收支流水與 CSV 匯出。僅使用測試資產。</p></div>
+    <footer><span>FLOWLEDGER <span class="footer-divider">/</span> ONCHAIN, IN FOCUS.</span><p>每次查詢皆為當下快照，不會自動更新。</p></footer>
+    <noscript><p class="error">請啟用 JavaScript，才能查詢網路、餘額與交易。</p></noscript>
+  </main>
+  <div id="copy-status" class="toast" role="status" hidden></div>
+</body>
+</html>

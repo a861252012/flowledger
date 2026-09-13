@@ -1,0 +1,7 @@
+.git
+.env
+.env.*
+bin
+data
+*.log
+coverage.out
