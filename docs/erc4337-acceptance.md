@@ -21,11 +21,13 @@
 
 這份證據只涵蓋 Sepolia、EntryPoint v0.6 和上述 SimpleAccount，沒有驗證 v0.7、UI、Paymaster 或 finalized 狀態。
 
-### 原操作為何失敗
+### AA95 失敗與重試紀錄
 
 原 hash `0x7c16a3f9662cfcf9381235410d18ebd675f56a87f5980f54e67f643bc8ab1266` 曾被 Bundler 接受，但[底層交易](https://sepolia.etherscan.io/tx/0xa3ec847a09acf70869643e166133abc587e1637f61d8c172e203278261702cb6) 的收據為 `status: 0x0`。以原交易參數在前一區塊重跑 `eth_call`，得到 `AA95 out of gas`：EntryPoint 的內層 gas 檢查未通過。先前只用較高 gas 的模擬，漏掉了這個條件。
 
-這次改用 chain ID 形式的 Candide 公開端點，以零 gas 欄位要求估算，並在 `preVerificationGas` 加上一次 verification gas 的預留。這是本次 v0.6 部署驗收的保守處理，會增加實際付給 Bundler 的費用，不是通用的最低費用算法。總費用仍受 0.003 測試 ETH 上限限制。
+後續改用 chain ID 形式的 Candide 公開端點，以零 gas 欄位要求估算，將估算值乘以 1.2 後取整數，再把調整後的 `verificationGasLimit` 加到 `preVerificationGas`。調整後的操作完成了上述部署與轉帳驗收。
+
+這次同時改了多個條件，沒有逐項對照測試，無法確定更換端點或每一項 gas 調整是否必要，也不能由此認定 Bundler 估算錯誤。額外的 `preVerificationGas` 預留會增加付給 Bundler 的費用；這是本次驗收採用的保守處理，不是通用解法，也不保證其他操作成功。指令計算的 gas 費用上限仍不得超過 0.003 測試 ETH。
 
 修正操作沿用相同帳戶、nonce 0、收款人與金額，費率提高 20%。原操作及新操作分開保存；相同 nonce 避免兩筆都執行。一般重跑指令仍只重送已保存的操作，不會自動替換或加價。
 

@@ -227,8 +227,8 @@ func run() error {
 		op.CallGasLimit = estimate.CallGasLimit
 		op.VerificationGasLimit = estimate.VerificationGasLimit
 		op.PreVerificationGas = estimate.PreVerificationGas
-		// This v0.6 deployment needs outer bundle headroom for the inner gas check.
-		// It increases the charged pre-verification gas; keep the total fee cap below.
+		// Extra reserve used in the successful v0.6 acceptance run, not a general fix.
+		// It increases the charged pre-verification gas; the fee check below still applies.
 		op.PreVerificationGas.Add(op.PreVerificationGas, op.VerificationGasLimit)
 		cost := new(big.Int).Add(op.CallGasLimit, op.VerificationGasLimit)
 		cost.Add(cost, op.PreVerificationGas)
