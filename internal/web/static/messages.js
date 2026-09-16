@@ -52,9 +52,9 @@ window.FlowMessages = {
   "管理加密備份與錢包密碼。": ["Manage encrypted backups and your wallet password.", "管理加密备份与钱包密码。"],
   "儲存常用收款地址，下次轉帳直接選用。": ["Save recipients for your next transfer.", "保存常用收款地址，下次转账直接选用。"],
 
-  "FlowLedger · 錢包": [
-    "FlowLedger · Wallet",
-    "FlowLedger · 钱包"
+  "Testnet Wallet Lab · 錢包": [
+    "Testnet Wallet Lab · Wallet",
+    "Testnet Wallet Lab · 钱包"
   ],
   "跳至主要內容": [
     "Skip to main content",
@@ -904,9 +904,9 @@ window.FlowMessages = {
     "66-character hash starting with 0x",
     "0x 开头的 66 字符哈希"
   ],
-  "FlowLedger · 作品與驗證": [
-    "FlowLedger · Portfolio & evidence",
-    "FlowLedger · 作品与验证"
+  "Testnet Wallet Lab · 作品與驗證": [
+    "Testnet Wallet Lab · Portfolio & evidence",
+    "Testnet Wallet Lab · 作品与验证"
   ],
   "← 開啟錢包": [
     "← Open wallet",
@@ -1120,9 +1120,9 @@ window.FlowMessages = {
     "Create / restore test wallet",
     "创建／还原测试钱包"
   ],
-  "從 FlowLedger Solana 加密備份還原": [
-    "Restore a FlowLedger Solana encrypted backup",
-    "从 FlowLedger Solana 加密备份还原"
+  "從 Testnet Wallet Lab Solana 加密備份還原": [
+    "Restore a Testnet Wallet Lab Solana encrypted backup",
+    "从 Testnet Wallet Lab Solana 加密备份还原"
   ],
   "備份檔案": [
     "Backup file",
@@ -1200,9 +1200,9 @@ window.FlowMessages = {
     "Backup",
     "备份"
   ],
-  "加密檔採 FlowLedger Solana 格式。助記詞可用於本頁還原；此檔案不是 Ethereum Keystore V3。": [
-    "Backups use the FlowLedger Solana format. Restore with the recovery phrase on this page. This file is not an Ethereum Keystore V3 file.",
-    "加密档采 FlowLedger Solana 格式。助记词可用于本页还原；此文件不是 Ethereum Keystore V3。"
+  "加密檔採 Testnet Wallet Lab Solana 格式。助記詞可用於本頁還原；此檔案不是 Ethereum Keystore V3。": [
+    "Backups use the Testnet Wallet Lab Solana format. Restore with the recovery phrase on this page. This file is not an Ethereum Keystore V3 file.",
+    "加密档采 Testnet Wallet Lab Solana 格式。助记词可用于本页还原；此文件不是 Ethereum Keystore V3。"
   ],
   "密碼": [
     "Password",
@@ -1244,9 +1244,9 @@ window.FlowMessages = {
     "Use a dedicated test recovery phrase. Back up TRON and EVM accounts separately.",
     "请使用专用测试助记词。TRON 与 EVM 账户各自备份。"
   ],
-  "從 FlowLedger TRON 加密備份還原": [
-    "Restore a FlowLedger TRON encrypted backup",
-    "从 FlowLedger TRON 加密备份还原"
+  "從 Testnet Wallet Lab TRON 加密備份還原": [
+    "Restore a Testnet Wallet Lab TRON encrypted backup",
+    "从 Testnet Wallet Lab TRON 加密备份还原"
   ],
   "BIP-39 英文助記詞，BIP-44 secp256k1，m/44'/195'/0'/0/0；額外密語為空。不同派生路徑會得到不同地址。": [
     "BIP-39 English phrase, BIP-44 secp256k1, m/44'/195'/0'/0/0; empty passphrase. Other derivation paths produce different addresses.",
@@ -1280,9 +1280,9 @@ window.FlowMessages = {
     "Fill a small TRX amount, then enter a recipient",
     "填入小额 TRX，另填收款地址"
   ],
-  "加密檔採 FlowLedger TRON 格式。助記詞可用於本頁還原；此檔案使用 Keystore V3 保存 TRON 私鑰，還原後以 TRON 地址顯示。": [
-    "Backups use the FlowLedger TRON format. The file stores a TRON private key in Keystore V3 format and displays a TRON address after restoration.",
-    "加密档采 FlowLedger TRON 格式。助记词可用于本页还原；此文件使用 Keystore V3 保存 TRON 私钥，还原后以 TRON 地址显示。"
+  "加密檔採 Testnet Wallet Lab TRON 格式。助記詞可用於本頁還原；此檔案使用 Keystore V3 保存 TRON 私鑰，還原後以 TRON 地址顯示。": [
+    "Backups use the Testnet Wallet Lab TRON format. The file stores a TRON private key in Keystore V3 format and displays a TRON address after restoration.",
+    "加密档采 Testnet Wallet Lab TRON 格式。助记词可用于本页还原；此文件使用 Keystore V3 保存 TRON 私钥，还原后以 TRON 地址显示。"
   ],
   "領取 5 測試 TRX": [
     "Get 5 test TRX",
@@ -1452,9 +1452,9 @@ window.FlowMessages = {
     "Confirmations do not mean finality. This is a query snapshot; refresh for an updated result.",
     "确认数不等于最终确定（finality）。这是本次查核的快照；重新查找可更新结果。"
   ],
-  "FlowLedger · ${networkName} 錢包": [
-    "FlowLedger · ${networkName} Wallet",
-    "FlowLedger · ${networkName} 钱包"
+  "Testnet Wallet Lab · ${networkName} 錢包": [
+    "Testnet Wallet Lab · ${networkName} Wallet",
+    "Testnet Wallet Lab · ${networkName} 钱包"
   ],
   "正在申請測試幣…": [
     "Requesting test tokens…",
@@ -2512,9 +2512,9 @@ window.FlowMessages = {
     "Mixed-case address checksum is invalid",
     "地址混合大小写校验和不正确"
   ],
-  "RPC 連到其他網路，已停止操作；FlowLedger 僅允許支援的測試網": [
+  "RPC 連到其他網路，已停止操作；Testnet Wallet Lab 僅允許支援的測試網": [
     "RPC network mismatch. Operation stopped; only supported testnets are allowed",
-    "RPC 连到其他网络，已停止操作；FlowLedger 仅允许支持的测试网"
+    "RPC 连到其他网络，已停止操作；Testnet Wallet Lab 仅允许支持的测试网"
   ],
   "找不到指定的報價或報價已過期": [
     "Quote not found or expired",

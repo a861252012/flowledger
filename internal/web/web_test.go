@@ -27,7 +27,7 @@ func TestRoutesAndInputErrors(t *testing.T) {
 		method, path, contains string
 		status                 int
 	}{
-		{"GET", "/", "FlowLedger", 200}, {"GET", "/static/app.css", ":root", 200},
+		{"GET", "/", "Testnet Wallet Lab", 200}, {"GET", "/static/app.css", ":root", 200},
 		{"GET", "/static/app.js", "refreshNetwork", 200}, {"GET", "/healthz", "wallet", 200},
 		{"GET", "/api/balance?address=invalid", "地址格式", 400},
 		{"GET", "/api/transactions/bad", "交易雜湊格式", 400},

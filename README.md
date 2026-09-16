@@ -1,11 +1,35 @@
-# FlowLedger
+# Testnet Wallet Lab
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [正體中文（台灣）](README.zh-TW.md) · [繁體中文（香港）](README.zh-HK.md)
 
-A Go testnet wallet for transfers, token approvals, swaps and transaction history with CSV export. Signed transactions are saved before broadcast; retries with the same account, network and quote ID reuse the original transaction. Receipts and finality are checked separately.
+A multi-chain testnet wallet experiment written in Go, for exploring transfers, token swaps, transaction tracking and recovery after RPC failures or restarts.
+
+![Wallet interface with local test data](docs/images/wallet-overview.png)
+
+*Interface preview using local test data.*
+
+## Features
+
+- Create, restore and manage local wallets with encrypted backups.
+- Send native coins and tokens, preview fees, and set or revoke ERC-20 allowances.
+- Wrap and unwrap WETH, and swap WETH / test USDC through Uniswap V3 on Ethereum Sepolia.
+- Build EVM activity records from transaction receipts and export them as CSV.
+
+## Transaction handling
+
+Signed transactions are saved before broadcast. Retries with the same account, network and quote ID reuse the saved transaction. When a broadcast result is uncertain, recovery uses the original signed bytes, subject to each network's expiry rules.
+
+EVM receipt success, canonical block inclusion and finality are checked separately. After a restart, the wallet reloads its transaction journal to continue tracking saved transactions.
 
 ## Networks
 
-- Ethereum, Arbitrum, Base and OP Sepolia; Polygon Amoy: native coins and ERC-20 tokens.
-- Ethereum Sepolia: WETH wrap/unwrap and Uniswap V3 WETH/test USDC swaps.
-- Solana Devnet: SOL. TRON Shasta: TRX and TRC-20, each with a separate wallet.
+| Network | Operations |
+|---|---|
+| Ethereum Sepolia | Native coin / ERC-20 transfers and approvals, WETH wrapping, Uniswap V3 swaps |
+| Arbitrum, Base, OP Sepolia · Polygon Amoy | Native coin / ERC-20 transfers and approvals |
+| Solana Devnet | SOL transfers, separate wallet |
+| TRON Shasta | TRX / TRC-20 transfers, separate wallet |
+
+## Account abstraction
+
+The standalone ERC-4337 package handles UserOperation encoding, signing and Bundler RPC calls. A CLI acceptance run on Ethereum Sepolia verified SimpleAccount deployment and a transfer through EntryPoint v0.6. It is not connected to the wallet interface.

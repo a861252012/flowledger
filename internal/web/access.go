@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-var accessPage = template.Must(template.New("access").Parse(`<!doctype html><html lang="zh-TW"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>開啟 FlowLedger</title></head><body><main><h1>開啟 FlowLedger</h1><p>輸入本機 .env 的 WALLET_ACCESS_TOKEN。這不是錢包密碼或助記詞。</p>{{if .}}<p role="alert">{{.}}</p>{{end}}<form method="post" action="/login"><label for="token">存取憑證</label><input id="token" name="token" type="password" autocomplete="current-password" required autofocus><button type="submit">開啟錢包</button></form><p>同一個瀏覽器工作階段只需登入一次。</p></main></body></html>`))
+var accessPage = template.Must(template.New("access").Parse(`<!doctype html><html lang="zh-TW"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>開啟 Testnet Wallet Lab</title></head><body><main><h1>開啟 Testnet Wallet Lab</h1><p>輸入本機 .env 的 WALLET_ACCESS_TOKEN。這不是錢包密碼或助記詞。</p>{{if .}}<p role="alert">{{.}}</p>{{end}}<form method="post" action="/login"><label for="token">存取憑證</label><input id="token" name="token" type="password" autocomplete="current-password" required autofocus><button type="submit">開啟錢包</button></form><p>同一個瀏覽器工作階段只需登入一次。</p></main></body></html>`))
 
 // RequireAccessToken accepts explicit Basic credentials for CLI clients and an
 // HttpOnly session cookie for browsers. It never issues a browser auth challenge.
