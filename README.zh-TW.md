@@ -20,11 +20,3 @@ docker compose build
 docker compose run --rm --no-deps app go mod download
 docker compose up -d
 ```
-
-開啟 [localhost:8090](http://localhost:8090)，建立或還原測試錢包，取得測試幣後即可預覽並發送交易。
-
-## 限制
-
-- 測試網原型，尚未經獨立安全稽核。請勿匯入持有真實資產的錢包，也不要將服務公開到網際網路。
-- 請備份完整 `wallet_data` volume；`docker compose down -v` 會刪除錢包資料。
-- 2026-09-15 驗收紀錄中，Polygon、Solana 尚未完成發送驗收。ERC-4337 是獨立元件，尚未接入錢包介面。

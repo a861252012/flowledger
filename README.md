@@ -20,11 +20,3 @@ docker compose build
 docker compose run --rm --no-deps app go mod download
 docker compose up -d
 ```
-
-Open [localhost:8090](http://localhost:8090). Create or restore a test wallet, fund it with test assets, then preview and send a transaction.
-
-## Limits
-
-- Testnet prototype, not independently audited. Never import a wallet holding real assets or expose the service publicly.
-- Back up the entire `wallet_data` volume. `docker compose down -v` deletes wallet data.
-- Polygon and Solana outgoing acceptance remains incomplete in the 2026-09-15 record. ERC-4337 is a separate component, not integrated into the wallet UI.
