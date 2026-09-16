@@ -4,4 +4,4 @@ RUN apk add --no-cache build-base
 WORKDIR /app
 ENV GOCACHE=/go/build-cache
 COPY go.mod ./
-CMD ["go", "run", "./cmd/flowledger"]
+CMD ["go", "run", "./cmd/testnet-wallet-lab"]

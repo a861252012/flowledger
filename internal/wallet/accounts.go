@@ -12,7 +12,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/a861252012/flowledger/internal/chain"
+	"github.com/a861252012/testnet-wallet-lab/internal/chain"
 )
 
 type AccountID string

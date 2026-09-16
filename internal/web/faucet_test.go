@@ -1,7 +1,7 @@
 package web
 
 import (
-	"github.com/a861252012/flowledger/internal/wallet"
+	"github.com/a861252012/testnet-wallet-lab/internal/wallet"
 	"net/http/httptest"
 	"strings"
 	"testing"

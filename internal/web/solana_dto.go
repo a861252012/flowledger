@@ -3,7 +3,7 @@ package web
 import (
 	"time"
 
-	"github.com/a861252012/flowledger/internal/wallet"
+	"github.com/a861252012/testnet-wallet-lab/internal/wallet"
 )
 
 type solanaStatusResponse struct {

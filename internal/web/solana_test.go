@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/a861252012/flowledger/internal/wallet"
+	"github.com/a861252012/testnet-wallet-lab/internal/wallet"
 )
 
 func TestSolanaLocalRequestBoundary(t *testing.T) {

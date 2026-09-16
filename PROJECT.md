@@ -1,22 +1,22 @@
-# Project: FlowLedger ERC-4337 Account Abstraction 模組
+# Project: Testnet Wallet Lab ERC-4337 Account Abstraction 模組
 
 ## Current status and boundary
 
-這個 package 已完成 UserOperation wire types、v0.6／v0.7 編碼、hash、builder、signer、Bundler JSON-RPC client 與 Mock Bundler 測試。它目前仍是與 EOA 錢包分離的 **library/component implementation**，不是已整合到 FlowLedger UI 的 smart-account 產品流程。
+這個 package 已完成 UserOperation wire types、v0.6／v0.7 編碼、hash、builder、signer、Bundler JSON-RPC client 與 Mock Bundler 測試。它目前仍是與 EOA 錢包分離的 **library/component implementation**，不是已整合到 Testnet Wallet Lab UI 的 smart-account 產品流程。
 
 | 範圍 | 狀態 | 證據／限制 |
 |---|---|---|
 | UserOperation types、wire encoding 與 hash | Complete | Unit 與 adversarial tests |
 | Builder、gas calculation 與 signer | Complete | Unit、boundary 與 signature recovery tests |
 | Bundler JSON-RPC client 與 error classification | Complete | `httptest` Mock Bundler integration tests |
-| FlowLedger service／UI integration | Not implemented | 現有 EOA 流程刻意不變 |
+| Testnet Wallet Lab service／UI integration | Not implemented | 現有 EOA 流程刻意不變 |
 | Deployed smart account 與 live bundler acceptance | Complete (Sepolia v0.6) | SimpleAccount 部署、UserOperation 收據及 1 wei 轉帳已驗證；見 [驗收紀錄](docs/erc4337-acceptance.md) |
 | Paymaster、session key 與 account recovery | Not implemented | 不在目前 package 範圍 |
 
 文件中的「端到端」若指 Mock Bundler，僅代表 package/component 邊界的整合測試；不代表已完成 smart account 部署、public bundler 廣播或真實鏈上收據驗收。
 
 ## Architecture
-- 本模組作為 FlowLedger 的現代智慧合約錢包與帳戶抽象化（Account Abstraction）核心擴充元件，位於 `internal/wallet/erc4337/`（子套件 `package erc4337`）。
+- 本模組作為 Testnet Wallet Lab 的現代智慧合約錢包與帳戶抽象化（Account Abstraction）核心擴充元件，位於 `internal/wallet/erc4337/`（子套件 `package erc4337`）。
 - 完全解耦原則：不更動既有 `internal/wallet/service.go` 的 EOA 發送流程，不寫入 `internal/wallet/journal.go` 既有交易日誌，保持既有工作流程 100% 穩定相容。
 - 密碼學與 ABI 編碼：直接利用專案既有之 `github.com/ethereum/go-ethereum`（`accounts/abi`, `crypto`, `common`, `common/hexutil`），不引入任何外部第三方依賴。
 - 零浮點數規範：全模組所有 Gas、費用、Nonce、數值計算嚴格採用 `*big.Int` 與純整數運算。

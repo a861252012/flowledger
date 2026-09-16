@@ -1,4 +1,4 @@
-module github.com/a861252012/flowledger
+module github.com/a861252012/testnet-wallet-lab
 
 go 1.26.1
 

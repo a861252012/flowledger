@@ -15,9 +15,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/a861252012/flowledger/internal/chain"
-	"github.com/a861252012/flowledger/internal/wallet"
-	"github.com/a861252012/flowledger/internal/web"
+	"github.com/a861252012/testnet-wallet-lab/internal/chain"
+	"github.com/a861252012/testnet-wallet-lab/internal/wallet"
+	"github.com/a861252012/testnet-wallet-lab/internal/web"
 )
 
 func main() {
@@ -255,7 +255,7 @@ func run() error {
 	defer stop()
 	serverError := make(chan error, 1)
 	go func() { serverError <- server.ListenAndServe() }()
-	slog.Info("FlowLedger listening", "url", "http://"+server.Addr, "mode", "Sepolia wallet")
+	slog.Info("Testnet Wallet Lab listening", "url", "http://"+server.Addr, "mode", "Sepolia wallet")
 	select {
 	case err := <-serverError:
 		if !errors.Is(err, http.ErrServerClosed) {

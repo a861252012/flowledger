@@ -1,4 +1,4 @@
-# E2E Test Infra: FlowLedger ERC-4337 Account Abstraction 模組
+# E2E Test Infra: Testnet Wallet Lab ERC-4337 Account Abstraction 模組
 
 ## Test Philosophy
 - 黑箱、需求導向（Opaque-box, requirement-driven）：測試案例完全依據 ORIGINAL_REQUEST.md 與 ERC-4337 規範設計，不依賴實作細節。

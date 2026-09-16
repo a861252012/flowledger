@@ -1,8 +1,8 @@
-# FlowLedger 全面優化計劃書
+# Testnet Wallet Lab 全面優化計劃書
 
 ## 目標
 
-將 FlowLedger 從「紮實的 side project」提升為「讓面試官印象深刻的 Web3 轉職作品集」。聚焦四個模組，按轉職 ROI 排序。
+將 Testnet Wallet Lab 從「紮實的 side project」提升為「讓面試官印象深刻的 Web3 轉職作品集」。聚焦四個模組，按轉職 ROI 排序。
 
 ---
 
@@ -39,7 +39,7 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-/// @title FlowToken -- FlowLedger 測試網專用 ERC-20
+/// @title FlowToken -- Testnet Wallet Lab 測試網專用 ERC-20
 /// @notice 展示 mint 上限、事件、owner 控制
 /// @dev 僅供測試網使用
 contract FlowToken is ERC20, Ownable {
@@ -83,7 +83,7 @@ contract FlowToken is ERC20, Ownable {
 
 **設計選擇的面試說辭**：
 - `MAX_SUPPLY` -- 展示你理解 token economics 的基本約束
-- `faucet()` 附 cooldown -- 對應 FlowLedger 現有的測試幣發放機制，形成端到端閉環
+- `faucet()` 附 cooldown -- 對應 Testnet Wallet Lab 現有的測試幣發放機制，形成端到端閉環
 - `Ownable` + `mint` -- 展示 access control pattern
 - 沒用 `Pausable`、`ERC20Permit` 等 -- 因為這是測試用途，保持簡單不過度設計
 
@@ -98,7 +98,7 @@ contract FlowToken is ERC20, Ownable {
 | `testTransferAndApprove` | 標準 ERC-20 行為 |
 | `testFuzz_Transfer(uint256)` | Fuzz 測試展示 |
 
-#### FlowLedger 整合
+#### Testnet Wallet Lab 整合
 
 ##### [MODIFY] [`internal/wallet/erc20.go`](file:///Users/a861252012/Desktop/folder/code/flowledger/internal/wallet/erc20.go)
 
@@ -121,7 +121,7 @@ cd contracts && forge test -vvv
 # 部署到 Sepolia
 forge script script/Deploy.s.sol --rpc-url $SEPOLIA_RPC_URL --broadcast --verify
 
-# FlowLedger 整合驗證
+# Testnet Wallet Lab 整合驗證
 FLOWLEDGER_LIVE_RPC=https://ethereum-sepolia-rpc.publicnode.com \
   go test ./internal/wallet -run TestFlowTokenReadOnly -v -count=1
 ```
@@ -333,7 +333,7 @@ jobs:
 
 ### 3.2 Demo 錄影
 
-用 FlowLedger 的實際操作錄一段 **2-3 分鐘** 的 demo video：
+用 Testnet Wallet Lab 的實際操作錄一段 **2-3 分鐘** 的 demo video：
 
 | 時間 | 內容 |
 |---|---|
@@ -402,7 +402,7 @@ ci: add GitHub Pages deployment workflow
 
 [2-min Demo](YouTube連結) | [Live Showcase](https://a861252012.github.io/flowledger/) | [Blog: Web3 Transition](連結)
 
-**FlowLedger** -- Go 本機多鏈測試網錢包，展示交易簽署、故障復原與鏈狀態追蹤。
+**Testnet Wallet Lab** -- Go 本機多鏈測試網錢包，展示交易簽署、故障復原與鏈狀態追蹤。
 
 ### Highlights
 - Journal-before-broadcast: crash-safe 交易持久化
@@ -419,13 +419,13 @@ ci: add GitHub Pages deployment workflow
 
 ```mermaid
 gantt
-    title FlowLedger 優化路線圖
+    title Testnet Wallet Lab 優化路線圖
     dateFormat  YYYY-MM-DD
     section 模組一：合約
     Foundry 專案設定             :a1, 2026-09-17, 1d
     FlowToken 合約 + 測試        :a2, after a1, 2d
     部署到 Sepolia               :a3, after a2, 1d
-    FlowLedger 整合              :a4, after a3, 1d
+    Testnet Wallet Lab 整合              :a4, after a3, 1d
     section 模組二：重構
     TransactionManager 提取      :b1, after a4, 2d
     HistoryManager 提取          :b2, after b1, 1d
@@ -458,8 +458,8 @@ python3 scripts/verify_onchain_evidence.py
 ```
 
 ### 手動驗證
-- [ ] 用 FlowLedger 查詢 FlowToken 餘額
-- [ ] 用 FlowLedger 轉帳 FlowToken 並確認 receipt
+- [ ] 用 Testnet Wallet Lab 查詢 FlowToken 餘額
+- [ ] 用 Testnet Wallet Lab 轉帳 FlowToken 並確認 receipt
 - [ ] `/healthz` 回傳 200 + 正確 JSON
 - [ ] `/metrics` 回傳 RPC 計數和 journal 容量
 - [ ] GitHub Pages showcase 頁面正常顯示

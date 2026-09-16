@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/a861252012/flowledger/internal/wallet"
+	"github.com/a861252012/testnet-wallet-lab/internal/wallet"
 )
 
 func NewFaucet(faucet *wallet.TestFaucet, solana *wallet.SolanaService, csrf string) http.Handler {

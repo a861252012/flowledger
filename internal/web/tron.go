@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/a861252012/flowledger/internal/wallet"
+	"github.com/a861252012/testnet-wallet-lab/internal/wallet"
 )
 
 func NewTron(service *wallet.TronService, csrf string) (http.Handler, error) {

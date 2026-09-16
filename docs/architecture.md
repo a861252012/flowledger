@@ -1,4 +1,4 @@
-# FlowLedger architecture and interview guide
+# Testnet Wallet Lab architecture and interview guide
 
 ```mermaid
 flowchart LR

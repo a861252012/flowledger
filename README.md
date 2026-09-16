@@ -30,6 +30,6 @@ EVM receipt success, canonical block inclusion and finality are checked separate
 | Solana Devnet | SOL transfers, separate wallet |
 | TRON Shasta | TRX / TRC-20 transfers, separate wallet |
 
-## Account abstraction
+## Smart contract wallet experiment
 
-The standalone ERC-4337 package handles UserOperation encoding, signing and Bundler RPC calls. A CLI acceptance run on Ethereum Sepolia verified SimpleAccount deployment and a transfer through EntryPoint v0.6. It is not connected to the wallet interface.
+Account deployment and a transfer have been tested on Ethereum Sepolia. This experiment currently runs from the command line only.

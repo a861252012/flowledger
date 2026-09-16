@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/a861252012/flowledger/internal/chain"
-	"github.com/a861252012/flowledger/internal/wallet"
+	"github.com/a861252012/testnet-wallet-lab/internal/chain"
+	"github.com/a861252012/testnet-wallet-lab/internal/wallet"
 )
 
 type evmNetworkResponse struct {

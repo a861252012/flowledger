@@ -30,6 +30,6 @@ EVM 收據是否成功、所在區塊是否仍在主鏈，以及是否 finalized
 | Solana Devnet | SOL 轉賬，使用獨立錢包 |
 | TRON Shasta | TRX／TRC-20 轉賬，使用獨立錢包 |
 
-## 賬戶抽象
+## 智能合約錢包實驗
 
-獨立的 ERC-4337 套件處理 UserOperation 編碼、簽署與 Bundler RPC。已透過 CLI 在 Ethereum Sepolia 完成 EntryPoint v0.6／SimpleAccount 部署與轉賬驗證，目前尚未接入錢包介面。
+已在 Ethereum Sepolia 完成賬戶部署及轉賬測試，目前只支援命令列操作。

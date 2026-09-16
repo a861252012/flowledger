@@ -2,7 +2,7 @@ package wallet
 
 import (
 	"bytes"
-	"github.com/a861252012/flowledger/internal/chain"
+	"github.com/a861252012/testnet-wallet-lab/internal/chain"
 	"os"
 	"strings"
 	"testing"
