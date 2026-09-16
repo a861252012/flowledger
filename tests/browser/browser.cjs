@@ -12,6 +12,7 @@ const customToken = '0x4444444444444444444444444444444444444444';
 const router = '0x3bfa4769fb09eefc5a80d6e87c3b9c650f7ae48e';
 let accountFixtures = [{id:'',name:'主要錢包',address,archived:false}];
 let accountWrites = 0, accountFailure = false;
+let enforceTokenLimit=false, activeTokenQueries=0, tokenLimitHits=0;
 let exists = true, balanceFailure = false, loseSendResponse = false, history = [], sent = [], quotes = new Map(), allowances = new Map();
 let tronExists=false,tronHistory=[],tronSends=0;const tronAddress='TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH';
 let solExists = false, solHistory = [], solSends = 0;
@@ -70,6 +71,10 @@ const server = http.createServer(async (req,res)=>{
   if(pathname==='/api/wallet/activity')return respond({page:1,pages:1,totalTransactions:0,transactions:[],totals:[]});
   if(pathname==='/api/wallet/scan')return respond({enabled:false,start:90,next:91,finalized:100,tokens:[]});
   if(pathname==='/api/wallet/token'||pathname==='/api/watch/token'){
+   if(enforceTokenLimit){
+    if(activeTokenQueries){tokenLimitHits++;res.statusCode=429;return respond({error:'fixture concurrent POST limit'});}
+    activeTokenQueries++;await new Promise(resolve=>setTimeout(resolve,30));activeTokenQueries--;
+   }
    const contract=(body.contract||url.searchParams.get('contract')).toLowerCase();
    const custom=contract===customToken,decimals=contract===usdc?6:18;
    return respond({contract,symbol:custom?'CUSTOM':contract===usdc?'USDC':'WETH',decimals,balance:'1',balanceRaw:10n**BigInt(decimals)+'',allowanceRaw:allowances.get(contract)||'0',allowance:'0',trustedMetadata:!custom});
@@ -125,6 +130,12 @@ const server = http.createServer(async (req,res)=>{
   await page.goto(base+'/shared-demo');
   await page.locator('#wallet-dashboard').waitFor({state:'visible'});
   assert.equal(await page.locator('a[href="/login"]').count(),0);
+  await page.waitForFunction(()=>!document.querySelector('#refresh-wallet').disabled);
+  enforceTokenLimit=true;
+  await page.locator('#refresh-wallet').click();await page.waitForFunction(()=>!document.querySelector('#refresh-wallet').disabled);
+  assert.equal(tokenLimitHits,0,'token refresh respects single concurrent POST limit');
+  assert.equal(await page.locator('#token-error').isVisible(),false);enforceTokenLimit=false;
+
   assert.equal(await page.locator('#manage-accounts').isEnabled(),true);
   await page.locator('#manage-accounts').click();
   await page.locator('#add-account').click();

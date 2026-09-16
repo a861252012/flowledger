@@ -431,16 +431,16 @@
       walletState.exchange?.weth, walletState.exchange?.usdc, ...saved,
       ...tokens.keys(),
     ].filter(Boolean).map(address => address.toLowerCase()))];
-    const results = await Promise.allSettled(addresses.map(contract => walletRequest('/api/wallet/token', {contract})));
     let failed = false;
-    results.forEach((result, index) => {
-      if (result.status === 'fulfilled') tokens.set(addresses[index].toLowerCase(), result.value);
-      else {
-        const token = tokens.get(addresses[index]);
+    // Token queries use POST and share the demo's single-request write limit.
+    for (const contract of addresses) {
+      try { tokens.set(contract, await walletRequest('/api/wallet/token', {contract})); }
+      catch {
+        const token = tokens.get(contract);
         if (token) token.stale = true;
         failed = true;
       }
-    });
+    }
     renderTokens();
     if (failed) showWalletError('token-error', new Error('部分代幣餘額無法更新，請稍後重試。'));
     else $('token-error').hidden = true;
