@@ -3351,5 +3351,141 @@ window.FlowMessages = {
   "終局確認": [
     "Finalized",
     "最终确认"
+  ],
+  "活動": [
+    "Activity",
+    "活动"
+  ],
+  "收支明細": [
+    "Asset movements",
+    "收支明细"
+  ],
+  "交易狀態": [
+    "Transaction status",
+    "交易状态"
+  ],
+  "重新整理": [
+    "Refresh",
+    "刷新"
+  ],
+  "更多操作": [
+    "More options",
+    "更多操作"
+  ],
+  "查詢其他交易": [
+    "Look up another transaction",
+    "查询其他交易"
+  ],
+  "開發者：同步與匯入": [
+    "Developer: sync and import",
+    "开发者：同步与导入"
+  ],
+  "活動檢視": [
+    "Activity views",
+    "活动视图"
+  ],
+  "查看交易狀態，或切換收支明細核對資產變動。": [
+    "Review transaction status or switch to asset movements.",
+    "查看交易状态，或切换收支明细核对资产变动。"
+  ],
+  "最後更新：${time(new Date().toISOString())}": [
+    "Last updated: ${time(new Date().toISOString())}",
+    "最后更新：${time(new Date().toISOString())}"
+  ],
+  "尚無已收錄的收支；未收錄不代表沒有鏈上交易。可至區塊瀏覽器核對。": [
+    "No recorded movements. Unrecorded transactions may exist; check the block explorer.",
+    "暂无已收录的收支；未收录不代表没有链上交易。可至区块浏览器核对。"
+  ],
+  "搜尋我的錢包或常用地址": [
+    "Search my wallets or contacts",
+    "搜索我的钱包或常用地址"
+  ],
+  "搜尋常用地址": [
+    "Search contacts",
+    "搜索常用地址"
+  ],
+  "輸入名稱或地址": [
+    "Enter a name or address",
+    "输入名称或地址"
+  ],
+  "儲存此收款地址": [
+    "Save this recipient",
+    "保存此收款地址"
+  ],
+  "復原移除": [
+    "Undo removal",
+    "撤销移除"
+  ],
+  "常用地址": [
+    "Contacts",
+    "常用地址"
+  ],
+  "我的錢包": [
+    "My wallets",
+    "我的钱包"
+  ],
+  "編輯名稱": [
+    "Edit name",
+    "编辑名称"
+  ],
+  "已複製地址。": [
+    "Address copied.",
+    "已复制地址。"
+  ],
+  "已移除，可復原。": [
+    "Removed. You can undo this.",
+    "已移除，可撤销。"
+  ],
+  "已復原。": [
+    "Restored.",
+    "已恢复。"
+  ],
+  "尚無符合的常用地址。": [
+    "No matching contacts.",
+    "暂无符合的常用地址。"
+  ],
+  "常用地址僅儲存在此瀏覽器，依測試網路分開；不會跨裝置同步。轉帳前請核對完整地址。": [
+    "Contacts are stored only in this browser, separately for each test network. They do not sync across devices. Verify the full address before sending.",
+    "常用地址仅保存在此浏览器，依测试网络分开；不会跨设备同步。转账前请核对完整地址。"
+  ],
+  "操作未完成，請確認瀏覽器權限後重試。": [
+    "Could not complete the action. Check browser permissions and try again.",
+    "操作未完成，请确认浏览器权限后重试。"
+  ],
+  "請輸入目前網路的完整有效地址；送出交易前仍會查核。": [
+    "Enter a complete address for this network; it will also be validated before sending.",
+    "请输入当前网络的完整有效地址；发送交易前仍会核验。"
+  ],
+  "此地址已有新資料，未覆寫。": [
+    "This address has newer data; it was not overwritten.",
+    "此地址已有新数据，未覆盖。"
+  ],
+  "觀察公開地址": [
+    "Watch a public address",
+    "观察公开地址"
+  ],
+  "說明與診斷": [
+    "Help and diagnostics",
+    "帮助与诊断"
+  ],
+  "開發者診斷": [
+    "Developer diagnostics",
+    "开发者诊断"
+  ],
+  "進階：包裝與直接兌換": [
+    "Advanced: wrapping and direct swaps",
+    "进阶：包装与直接兑换"
+  ],
+  "完整收款地址": [
+    "Full recipient address",
+    "完整收款地址"
+  ],
+  "請使用符合目前網路的外部水龍頭；領取後重新整理餘額。": [
+    "Use an external faucet for this network, then refresh your balance.",
+    "请使用符合当前网络的外部水龙头；领取后刷新余额。"
+  ],
+  "外部服務可能要求登入或符合領取資格；請勿提供助記詞或私鑰。": [
+    "External services may require sign-in or eligibility checks. Never provide your recovery phrase or private key.",
+    "外部服务可能要求登录或符合领取资格；请勿提供助记词或私钥。"
   ]
 };

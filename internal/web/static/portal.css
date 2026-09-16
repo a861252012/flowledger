@@ -272,3 +272,14 @@ body[data-wallet-family="showcase"] .wallet-work-grid { display: grid; grid-temp
 
 .public-access { padding: 1rem 1.5rem; }
 .public-access p { margin: .4rem 0; }
+
+.activity-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.activity-toolbar p { margin: 0; color: var(--muted); }
+.activity-toolbar details { margin-left: auto; }
+.contact-row .mono { overflow-wrap: anywhere; }
+.contact-row .feature-actions { flex-wrap: wrap; }
+/* Shared-demo controls stay unavailable even when wallet state is refreshed. */
+[data-shared-unavailable] { display: none !important; }
+
+.activity-toolbar a[aria-current="page"] { background: var(--accent-soft, #e1f1ec); color: var(--accent, #136b57); font-weight: 700; }
+#contact-form { margin-bottom: 24px; }

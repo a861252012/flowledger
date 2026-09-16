@@ -1,46 +1,16 @@
 'use strict';
 (() => {
-  const key = 'flowledger:contacts:' + networkID;
   const watchesKey = 'flowledger:watches:' + networkID;
   function stored(name) {
     try { const value = JSON.parse(localStorage.getItem(name) || '[]'); return Array.isArray(value) ? value.filter(item => item && /^0x[0-9a-fA-F]{40}$/.test(item.address) && typeof item.label === 'string').slice(0,100) : []; }
     catch { return []; }
   }
-  let contacts = stored(key), watches = stored(watchesKey);
+  let watches = stored(watchesKey);
   function address(input) {
     const value = $(input).value.trim();
     if (!/^0x[0-9a-fA-F]{40}$/.test(value) || /^0x0{40}$/i.test(value)) throw new Error('請輸入完整且非零的地址；轉帳時仍會驗證大小寫校驗。');
     return value;
   }
-  function renderContacts() {
-    $('contact-select').replaceChildren(new Option('選擇收款人', ''), ...contacts.map(item => Object.assign(new Option(`${item.label} · ${item.address}`,item.address), {translate:false})));
-    $('contacts-list').replaceChildren();
-    for (const item of contacts) {
-      const row = node('div','','contact-row');
-      const remove = node('button','移除','secondary'); remove.type = 'button';
-      remove.addEventListener('click',() => {
-        try { const next = contacts.filter(c => c.address !== item.address); localStorage.setItem(key,JSON.stringify(next)); contacts = next; renderContacts(); }
-        catch { $('contacts-feedback').textContent = '瀏覽器無法儲存，地址簿尚未變更。'; }
-      });
-      const name = node('strong',item.label); name.translate = false;
-      row.append(name,node('p',item.address,'mono'),remove); $('contacts-list').append(row);
-    }
-    window.dispatchEvent(new Event('contacts-updated'));
-  }
-  window.flowledgerAddressLabel = value => contacts.find(c => c.address.toLowerCase() === value?.toLowerCase())?.label || '';
-  $('contact-form').addEventListener('submit',event => {
-    event.preventDefault();
-    try {
-      const value = address('contact-address'), label = $('contact-label').value.trim();
-      if (!label || Array.from(label).length > 40) throw new Error('名稱需為 1–40 字元。');
-      const next = contacts.filter(c => c.address.toLowerCase() !== value.toLowerCase());
-      if (next.length >= 100) throw new Error('地址簿最多 100 筆。');
-      next.push({address:value,label}); localStorage.setItem(key,JSON.stringify(next)); contacts = next;
-      renderContacts(); $('contacts-feedback').textContent = '已儲存。';
-    } catch (error) { $('contacts-feedback').textContent = errorMessage(error); }
-  });
-  $('contact-select').addEventListener('change',()=> { if ($('contact-select').value) { $('send-to').value = $('contact-select').value; $('send-to').focus(); } });
-  renderContacts();
   function renderWatches() {
     $('watch-saved').replaceChildren();
     for (const item of watches) {

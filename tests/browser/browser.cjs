@@ -108,7 +108,7 @@ const server = http.createServer(async (req,res)=>{
   assert.equal(await page.locator('#manage-accounts').isDisabled(),true);
   assert.equal(await page.locator('script[src="/static/wallet.js"]').count(),0);
   await view('send-panel');
-  assert.equal(await page.locator('#send-form button').isDisabled(),true);
+  assert.equal(await page.locator('#send-form button[type=submit]').isDisabled(),true);
   await view('balance-panel');
   await page.locator('#address').fill(address);
   await page.locator('#balance-form button[type=submit]').click();
@@ -144,6 +144,49 @@ const server = http.createServer(async (req,res)=>{
     assert.equal(await page.locator('#'+prefix+'-transfer button[type=submit]').isEnabled(),true);
   }
   console.log('PASS: shared demo enables named wallet creation and all networks; existing wallet administration restricted.');
+  await page.goto(base+'/shared-demo');
+  await page.locator('#wallet-dashboard').waitFor({state:'visible'});
+  assert.equal(await page.locator('.nav-tools').count(),0);
+  assert.equal(await page.locator('#nav-activity').count(),0);
+  await view('activity-panel');
+  assert.equal(await page.locator('#activity-sync-settings').isVisible(),false);
+  await page.locator('#activity-refresh').click();
+  await page.waitForFunction(()=>document.querySelector('#activity-updated').textContent.includes('最後更新'));
+  await page.screenshot({path:'/tmp/wallet-ux-activity.png',fullPage:true});
+  await view('settings-panel');assert.equal(await page.locator('#password-form').isVisible(),false);
+  await view('test-funding-panel');assert.equal(await page.locator('#claim-native').isVisible(),false);
+  assert.ok(await page.locator('#test-funding-panel a[href^="https:"]').count()>0);
+  await view('send-panel');
+  await page.locator('#recipient-search').fill('主要');
+  assert.ok(await page.locator('#contact-select optgroup option').count()>0,'own wallets available as recipients');
+  await page.locator('#send-to').fill(address);
+  await page.locator('#save-recipient').click();
+  await page.locator('#contact-label').fill('UX 測試聯絡人');
+  await page.locator('#contact-form button').click();
+  await page.locator('#contacts-search').fill('不符合');assert.equal(await page.locator('#contacts-list strong').count(),0);
+  await page.locator('#contacts-search').fill('UX');
+  await page.locator('#contacts-list button').filter({hasText:'編輯名稱'}).click();
+  await page.locator('#contact-label').fill('UX 已改名');await page.locator('#contact-form button').click();
+  assert.equal(await page.locator('#contacts-list strong').textContent(),'UX 已改名');
+  await page.screenshot({path:'/tmp/wallet-ux-contacts.png',fullPage:true});
+  await page.locator('#contacts-list button').filter({hasText:'移除'}).click();assert.equal(await page.locator('#contacts-list strong').count(),0);
+  await page.locator('#undo-contact').click();assert.equal(await page.locator('#contacts-list strong').textContent(),'UX 已改名');
+  await page.locator('#contacts-list button').filter({hasText:'發送資產'}).click();
+  assert.equal(await page.locator('#send-to').inputValue(),address);
+  await page.reload();await view('contacts-panel');assert.equal(await page.locator('#contacts-list strong').textContent(),'UX 已改名');
+  await page.goto(base+'/net/base/');await view('contacts-panel');assert.equal(await page.locator('#contacts-list strong').count(),0,'contacts isolated by network');
+  for (const [family,recipientID,value] of [['solana','sol-to',solAddress],['tron','tron-to',tronAddress]]) {
+    await page.goto(base+'/'+family+'/?shared');await view('contacts-panel');
+    await page.locator('#contact-label').fill('Chain contact');await page.locator('#contact-address').fill(address);await page.locator('#contact-form button').click();
+    assert.equal(await page.locator('#contacts-list strong').count(),0,'EVM address rejected on another family');
+    await page.locator('#contact-address').fill(value);await page.locator('#contact-form button').click();
+    assert.equal(await page.locator('#contacts-list strong').textContent(),'Chain contact');
+    await page.locator('#contacts-list button').filter({hasText:'發送資產'}).click();
+    assert.equal(await page.locator('#'+recipientID).inputValue(),value);
+    await view('test-funding-panel');assert.ok(await page.locator('#test-funding-panel a[href^="https:"]').count()>0);
+  }
+  console.log('PASS: activity navigation/refresh, hidden unavailable controls, faucets, own-wallet recipients, contact rename/search/undo/persistence and EVM/SOL/TRX isolation.');
+
   for(const [slug,id] of Object.entries(networks)){
    await page.goto(base+'/net/'+slug+'/');await page.locator('#wallet-dashboard').waitFor({state:'visible'});
    assert.equal(await page.locator('#network-select').inputValue(),'/net/'+slug);
@@ -183,7 +226,7 @@ const server = http.createServer(async (req,res)=>{
   await page.keyboard.press('Escape');assert.equal(await page.locator('#account-manager').isVisible(),false);
   await page.setViewportSize({width:1280,height:900});
   await page.locator('#tokens-panel > details > summary').click();await page.locator('#token-contract').fill(customToken);await page.locator('#token-form button').click();await page.waitForFunction(token=>[...document.querySelector('#send-asset').options].some(option=>option.value===token),customToken);
-  await view('send-panel');await page.locator('#send-asset').selectOption(customToken);assert.equal(await page.locator('#send-amount-label').textContent(),'最小單位數量（整數）');await page.locator('#send-to').fill(address);await page.locator('#send-amount').fill('123');await page.locator('#send-form button').click();await page.locator('#send-confirmation').waitFor({state:'visible'});assert.equal([...quotes.values()].at(-1).amountRaw,'123');assert.equal([...quotes.values()].at(-1).amount,'');await page.locator('#cancel-send').click();
+  await view('send-panel');await page.locator('#send-asset').selectOption(customToken);assert.equal(await page.locator('#send-amount-label').textContent(),'最小單位數量（整數）');await page.locator('#send-to').fill(address);await page.locator('#send-amount').fill('123');await page.locator('#send-form button[type=submit]').click();await page.locator('#send-confirmation').waitFor({state:'visible'});assert.equal([...quotes.values()].at(-1).amountRaw,'123');assert.equal([...quotes.values()].at(-1).amount,'');await page.locator('#cancel-send').click();
   await view('test-funding-panel');await page.locator('#claim-native').click();
   await page.waitForFunction(()=>document.querySelector('#test-funding-status').textContent.includes('鏈上執行成功'));
   assert.ok((await page.locator('#test-funding-status a').getAttribute('href')).endsWith('f'.repeat(64)));
@@ -215,7 +258,7 @@ const server = http.createServer(async (req,res)=>{
   await view('test-funding-panel');await page.locator('#sol-airdrop').click(); await page.waitForFunction(()=>document.querySelector('#sol-funding-status').textContent.includes('限流'));
   assert.equal(await page.locator('#sol-airdrop').isEnabled(),true);
   assert.equal(await page.locator('#sol-password').inputValue(),'');
-  await view('send-panel');await page.locator('#sol-self').click();await page.locator('#sol-transfer button').click();await page.locator('#sol-confirm').waitFor({state:'visible'});
+  await view('send-panel');await page.locator('#sol-self').click();await page.locator('#sol-transfer button[type=submit]').click();await page.locator('#sol-confirm').waitFor({state:'visible'});
   assert.ok((await page.locator('#sol-quote').textContent()).includes('Solana Devnet'));assert.equal(solSends,0);
   await page.locator('#sol-sign-password').fill('fixture-password-only');await page.locator('#sol-sign button[type=submit]').click();await page.locator('#sol-confirm').waitFor({state:'hidden'});
   await page.waitForFunction(()=>document.querySelector('#sol-history').textContent.includes('終局確認'));assert.equal(solSends,1);assert.equal(await page.locator('#sol-sign-password').inputValue(),'');
@@ -248,7 +291,7 @@ const server = http.createServer(async (req,res)=>{
   await page.waitForFunction(()=>document.querySelector('#app-sidebar').contains(document.activeElement));await page.keyboard.press('Escape');assert.equal(await page.locator('#menu-toggle').getAttribute('aria-expanded'),'false');
   await page.locator('#menu-toggle').click();await page.locator('#app-sidebar a[href="#receive-panel"]').click();await page.locator('#receive-panel').waitFor({state:'visible'});assert.equal(await page.locator('#receive-panel').isVisible(),true);assert.equal(await page.locator('#menu-toggle').getAttribute('aria-expanded'),'false');
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'English mobile overflow');
-  await page.goto(base+'/solana/');assert.equal(await page.locator('#language-select').inputValue(),'en');await view('send-panel');assert.equal(await page.locator('#sol-transfer button').textContent(),'Review transfer');
+  await page.goto(base+'/solana/');assert.equal(await page.locator('#language-select').inputValue(),'en');await view('send-panel');assert.equal(await page.locator('#sol-transfer button[type=submit]').textContent(),'Review transfer');
   await page.goto(base+'/tron/');await view('test-funding-panel');assert.equal(await page.locator('#tron-claim').textContent(),'Get 5 test TRX');
   await page.locator('#language-select').selectOption('zh-TW');assert.equal(await page.locator('#tron-claim').textContent(),'領取 5 測試 TRX');
   await page.setViewportSize({width:1280,height:900});await page.goto(base);await page.locator('#language-select').selectOption('en');

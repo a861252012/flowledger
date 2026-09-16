@@ -153,7 +153,6 @@
       $('nav-send').hidden = !walletState.exists;
       $('nav-history').hidden = !walletState.exists;
       $('nav-exchange').hidden = !walletState.exists;
-      $('nav-activity').hidden = !walletState.exists;
       if (walletState.exists) {
         $('wallet-address').textContent = walletState.address;
         $('claim-native').textContent = `領取 ${walletState.chainId === 11155111 ? '0.001' : walletState.chainId === 80002 ? '0.1' : '0.0001'} 測試 ${nativeSymbol}`;
@@ -634,13 +633,14 @@
       $('activity-prev').disabled = data.page <= 1;
       $('activity-next').disabled = data.page >= data.pages;
       $('activity-list').replaceChildren();
-      if (!data.transactions.length) $('activity-list').append(node('p', `尚無收支。取得測試 ${nativeSymbol} 後，可同步最近區塊或匯入收款交易。`, 'muted'));
+      if (!data.transactions.length) $('activity-list').append(node('p', '尚無已收錄的收支；未收錄不代表沒有鏈上交易。可至區塊瀏覽器核對。', 'muted'));
       if (data.incomplete) showWalletError('activity-error', new Error('部分交易尚未確認或無法查核，不列入本頁合計。'));
       for (const total of data.totals) {
         const box = node('div', '', 'activity-totals');
         box.append(node('strong', total.asset === nativeSymbol ? `本頁 ${nativeSymbol} 收支` : `本頁代幣 ${total.asset}`), node('p', `收入 ${displayAsset(total.receivedRaw,total.asset)} · 支出 ${displayAsset(total.sentRaw,total.asset)}`),node('p',`手續費 ${displayAsset(total.feeRaw,total.asset)} · 淨變動 ${displayAsset(total.netRaw,total.asset)}`));
         $('activity-totals').append(box);
       }
+      $('activity-updated').textContent = `最後更新：${time(new Date().toISOString())}`;
       const kinds = {receive:'收款',send:'付款',fee:'手續費'};
       for (const tx of data.transactions) {
         const row = node('article', '', 'history-row');
@@ -662,7 +662,15 @@
     } catch (error) { $('activity-list').replaceChildren(); showWalletError('activity-error',error); }
     finally { activityLoading = false; $('activity-refresh').disabled = false; }
   }
-  $('activity-refresh').addEventListener('click',refreshActivity);
+  $('activity-refresh').addEventListener('click', async () => {
+    if (activityLoading || $('activity-refresh').disabled) return;
+    $('activity-refresh').disabled = true;
+    await refreshWallet();
+    await refreshActivity();
+  });
+  window.addEventListener('wallet-view', async event => {
+    if (walletState?.exists && !activityLoading && ['history-panel', 'activity-panel'].includes(event.detail)) { await refreshWallet(); await refreshActivity(); }
+  });
   $('activity-prev').addEventListener('click',()=>{if(!activityLoading){activityPage -= 1;refreshActivity();}});
   $('activity-next').addEventListener('click',()=>{if(!activityLoading){activityPage += 1;refreshActivity();}});
   $('activity-import-form').addEventListener('submit', async event => {
@@ -735,6 +743,7 @@
       return option;
     }));
     $('account-select').value = accountPrefix.split('/')[2] || '';
+    window.dispatchEvent(new CustomEvent('wallet-accounts', {detail: accounts}));
   }
 
   function renderAccountList() {
