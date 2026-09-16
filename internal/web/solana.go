@@ -18,7 +18,7 @@ func NewSolana(service *wallet.SolanaService, csrf string) (http.Handler, error)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_ = page.Execute(w, nil)
+		_ = page.Execute(w, map[string]any{"Shared": r.Context().Value(sharedDemoKey{}) == true})
 	})
 	mux.HandleFunc("GET /api/status", localWalletFilter(csrf, func(w http.ResponseWriter, r *http.Request) {
 		result, err := service.Status()

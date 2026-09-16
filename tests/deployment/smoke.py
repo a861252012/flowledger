@@ -50,7 +50,8 @@ try:
     docker("volume", "create", volume)
     # Reuse the already available build image only to set disposable volume ownership.
     docker("run", "--rm", "--network", "none", "-v", volume+":/data", "golang:1.26-alpine@sha256:ce864e7223ac17b1775e6fd0b4c0db580c2eb50e7953a427916379e4b92a1628", "chown", "10001:10001", "/data")
-    args = ["run", "--platform", "linux/"+arch, "-d", "--name", name, "--network", "none", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true", "--memory", "640m", "--memory-swap", "640m", "-e", "GOMEMLIMIT=480MiB", "--cpus", "1", "--pids-limit", "128", "-v", probe_dir.name+"/probe:/probe:ro", "-v", volume+":/data/wallet", "-e", "PUBLIC_ORIGIN=https://wallet.example", "-e", "WALLET_ACCESS_TOKEN="+secrets.token_hex(32)]
+    access_token = secrets.token_hex(32)
+    args = ["run", "--platform", "linux/"+arch, "-d", "--name", name, "--network", "none", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true", "--memory", "640m", "--memory-swap", "640m", "-e", "GOMEMLIMIT=480MiB", "--cpus", "1", "--pids-limit", "128", "-v", probe_dir.name+"/probe:/probe:ro", "-v", volume+":/data/wallet", "-e", "PUBLIC_ORIGIN=https://wallet.example", "-e", "WALLET_ACCESS_TOKEN="+access_token]
     for key in ["SEPOLIA", "ARBITRUM_SEPOLIA", "BASE_SEPOLIA", "OP_SEPOLIA", "POLYGON_AMOY", "SOLANA_DEVNET", "TRON_SHASTA"]:
         args.extend(["-e", key+"_RPC_URL=http://127.0.0.1:1"])
     docker(*args, image)
@@ -90,6 +91,29 @@ try:
         assert status == expected, "shared export password check failed"
     for path in ["/api/wallet/create", "/api/wallet/accounts/update", "/api/wallet/scan", "/api/wallet/password"]:
         assert checks.request(port, path, "POST", shared_headers, "{}")[0] == 403, "CSRF must not authorize management"
+    chain_addresses = {}
+    for family in ["solana", "tron"]:
+        prefix = "/"+family+"/api/"
+        body = json.dumps({"password": wallet_password})
+        assert checks.request(port, prefix+"create", "POST", shared_headers, body)[0] == 401
+        operator = {**shared_headers, "Authorization": "Basic "+base64.b64encode(("flowledger:"+access_token).encode()).decode()}
+        assert checks.request(port, prefix+"create", "POST", operator, body)[0] == 200
+        status, _, data = checks.request(port, prefix+"status", headers=shared_headers)
+        assert status == 200 and json.loads(data)["exists"]
+        chain_addresses[family] = json.loads(data)["address"]
+        assert checks.request(port, prefix+"create", "POST", operator, body)[0] == 400, "must not overwrite initialized wallet"
+        for password, expected in [("incorrect-password", 400), (wallet_password, 200)]:
+            assert checks.request(port, prefix+"backup", "POST", shared_headers, json.dumps({"password": password}))[0] == expected
+        for action in ["restore", "password"]:
+            assert checks.request(port, prefix+action, "POST", operator, "{}")[0] == 403
+    docker("stop", "-t", "45", name)
+    docker("rm", name)
+    docker(*args, "-e", "SHARED_DEMO=true", image)
+    ready()
+    for family, address in chain_addresses.items():
+        status, _, data = checks.request(port, "/"+family+"/api/status", headers=shared_headers)
+        assert status == 200 and json.loads(data)["address"] == address
+    print("PASS: SOL/TRX operator initialization, anonymous access, password checks and container replacement persistence")
     print("PASS: shared mode uses same wallet without login; password and management restrictions verified")
     print("PASS: real image, non-root/read-only runtime, login/CSRF, container replacement persistence, stale session rejection; no live RPC")
 finally:

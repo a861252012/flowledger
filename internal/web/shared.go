@@ -17,7 +17,8 @@ var errSharedAttempts = errors.New("密碼操作過於頻繁，請稍後再試")
 
 // SharedDemo exposes the existing wallet UI but keeps wallet administration closed.
 // Signing and encrypted exports still pass through the wallet's password checks.
-func SharedDemo(next http.Handler) http.Handler {
+func SharedDemo(next http.Handler, token string) http.Handler {
+	initialize := RequireAccessToken(next, token)
 	next = LimitTraffic(next)
 	var mu sync.Mutex
 	window := time.Now()
@@ -51,12 +52,22 @@ func SharedDemo(next http.Handler) http.Handler {
 				return
 			}
 			switch route {
+			case "/solana/api/create", "/tron/api/create":
+				// Only the operator may initialize an absent chain wallet.
+				if len(token) < 32 {
+					respondWallet(w, http.StatusForbidden, nil, errSharedDemo)
+					return
+				}
+				initialize.ServeHTTP(w, r)
+				return
+			case "/solana/api/quote", "/solana/api/send", "/solana/api/retry", "/solana/api/backup",
+				"/tron/api/quote", "/tron/api/send", "/tron/api/retry", "/tron/api/backup":
 			case "/api/wallet/quote", "/api/wallet/send", "/api/wallet/retry", "/api/wallet/token", "/api/wallet/exchange/pools", "/api/wallet/backup":
 			default:
 				respondWallet(w, http.StatusForbidden, nil, errSharedDemo)
 				return
 			}
-			if route == "/api/wallet/send" || route == "/api/wallet/backup" {
+			if strings.HasSuffix(route, "/send") || strings.HasSuffix(route, "/backup") {
 				mu.Lock()
 				if time.Since(window) >= time.Minute {
 					window, attempts = time.Now(), 0

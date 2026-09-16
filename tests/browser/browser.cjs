@@ -28,7 +28,7 @@ const server = http.createServer(async (req,res)=>{
   const respond = data => res.end(JSON.stringify(data));
 
   if(pathname==='/showcase'){res.setHeader('Content-Type','text/html');return res.end(await fs.readFile(path.join(root,'internal/web/templates/showcase.html')));}
-  if(pathname==='/tron/'){res.setHeader('Content-Type','text/html');return res.end(await fs.readFile(path.join(root,'internal/web/templates/tron.html')));}
+  if(pathname==='/tron/'){res.setHeader('Content-Type','text/html');return res.end((await fs.readFile(path.join(root,'internal/web/templates/tron.html'),'utf8')).replace(/{{if \.Shared}}([\s\S]*?){{end}}/g,(_,yes)=>url.searchParams.has('shared')?yes:''));}
   if(pathname==='/tron/api/status')return respond({exists:tronExists,address:tronAddress,csrfToken:'fixture'});
   if(pathname==='/tron/api/create'){tronExists=true;return respond({address:tronAddress});}
   if(pathname==='/tron/api/balance')return respond({trx:'100',active:true,bandwidth:600,energy:0});
@@ -36,7 +36,7 @@ const server = http.createServer(async (req,res)=>{
   if(pathname==='/tron/api/token')return respond({contract:tronAddress,symbol:'TEST',balance:'1',decimals:6});
   if(pathname==='/tron/api/quote')return respond({...body,id:'tron-quote',symbol:body.contract?'TEST':'TRX',feeTrx:'0.3',feeLimitTrx:'0',energy:0,bandwidth:300,expiresAt:new Date(Date.now()+60000).toISOString()});
   if(pathname==='/tron/api/send'){tronSends += 1;tronHistory=[{signature:'1'.repeat(64),to:tronAddress,amount:'0.000001',symbol:'TRX',feeTrx:'0.001',state:'finalized',finalized:true}];return respond(tronHistory[0]);}
-  if(pathname==='/solana/'){res.setHeader('Content-Type','text/html');return res.end(await fs.readFile(path.join(root,'internal/web/templates/solana.html')));}
+  if(pathname==='/solana/'){res.setHeader('Content-Type','text/html');return res.end((await fs.readFile(path.join(root,'internal/web/templates/solana.html'),'utf8')).replace(/{{if \.Shared}}([\s\S]*?){{end}}/g,(_,yes)=>url.searchParams.has('shared')?yes:''));}
   if(pathname==='/solana/api/status')return respond({exists:solExists,address:solAddress,csrfToken:'fixture'});
   if(pathname==='/solana/api/create'){solExists=true;return respond({address:solAddress});}
   if(pathname==='/solana/api/balance'){if(balanceFailure){res.statusCode=502;return respond({error:'fixture Devnet unavailable'});}return respond({sol:'0.1',slot:100});}
@@ -128,7 +128,14 @@ const server = http.createServer(async (req,res)=>{
   assert.equal(await page.locator('#manage-accounts').isDisabled(),true);
   await view('send-panel');
   assert.equal(await page.locator('#send-form button[type=submit]').isEnabled(),true);
-  console.log('PASS: shared demo has full wallet UI without owner login; management disabled.');
+  for (const value of ['/solana','/tron']) assert.equal(await page.locator(`#network-select option[value="${value}"]`).isDisabled(),false);
+  for (const [family,prefix] of [['solana','sol'],['tron','tron']]) {
+    await page.goto(base+'/'+family+'/?shared');
+    assert.equal(await page.locator('#'+prefix+'-create button').isDisabled(),true);
+    assert.equal(await page.locator('#'+prefix+'-password-form button').isDisabled(),true);
+    assert.equal(await page.locator('#'+prefix+'-transfer button[type=submit]').isEnabled(),true);
+  }
+  console.log('PASS: shared demo enables all networks and chain transfer forms; administration disabled.');
   for(const [slug,id] of Object.entries(networks)){
    await page.goto(base+'/net/'+slug+'/');await page.locator('#wallet-dashboard').waitFor({state:'visible'});
    assert.equal(await page.locator('#network-select').inputValue(),'/net/'+slug);

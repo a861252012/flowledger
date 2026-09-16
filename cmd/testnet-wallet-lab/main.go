@@ -281,7 +281,7 @@ func run() error {
 	})
 	var accessHandler http.Handler = web.RequireAccessToken(workspace, config.accessToken)
 	if config.sharedDemo {
-		accessHandler = web.SharedDemo(workspace)
+		accessHandler = web.SharedDemo(workspace, config.accessToken)
 	}
 	server := &http.Server{
 		Addr: net.JoinHostPort(config.httpHost, strconv.Itoa(config.httpPort)), Handler: web.WithPublicOrigin(accessHandler, config.publicOrigin),
