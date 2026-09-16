@@ -10,7 +10,7 @@
 | Builder、gas calculation 與 signer | Complete | Unit、boundary 與 signature recovery tests |
 | Bundler JSON-RPC client 與 error classification | Complete | `httptest` Mock Bundler integration tests |
 | FlowLedger service／UI integration | Not implemented | 現有 EOA 流程刻意不變 |
-| Deployed smart account 與 live bundler acceptance | Not verified | 不宣稱 testnet end-to-end UserOperation |
+| Deployed smart account 與 live bundler acceptance | Complete (Sepolia v0.6) | SimpleAccount 部署、UserOperation 收據及 1 wei 轉帳已驗證；見 [驗收紀錄](docs/erc4337-acceptance.md) |
 | Paymaster、session key 與 account recovery | Not implemented | 不在目前 package 範圍 |
 
 文件中的「端到端」若指 Mock Bundler，僅代表 package/component 邊界的整合測試；不代表已完成 smart account 部署、public bundler 廣播或真實鏈上收據驗收。
@@ -45,7 +45,7 @@
 | M2 | UserOperation Signer 與 Builder (R2) | Features 4, 5, 6, 7: builder.go, signer.go, PreVerificationGas, Keystore 整合 | M1 | COMPLETE |
 | M3 | Bundler JSON-RPC Client 與 Mock 架構 (R3) | Features 8, 9, 10: client.go, rpc_types.go, mock_server.go, client_test.go | M1, M2 | COMPLETE (MOCK) |
 | M4 | Package hardening | 對抗性、boundary、JSON concurrency、Race 與 Vet 檢查 | M1, M2, M3 | COMPLETE (LOCAL) |
-| M5 | Live smart-account vertical slice | 部署 account、連接 public bundler、廣播 UserOperation 並核對鏈上 receipt | M1–M4 | NOT STARTED |
+| M5 | Live smart-account vertical slice | Sepolia、EntryPoint v0.6、SimpleAccount 部署與 1 wei 轉帳通過；見驗收紀錄 | M1–M4 | COMPLETE (SCOPED) |
 
 ## Interface Contracts
 
