@@ -34,6 +34,6 @@ EVM 收據是否成功、所在區塊是否仍在主鏈，以及是否 finalized
 
 已在 Ethereum Sepolia 完成帳戶部署與轉帳測試，目前僅支援命令列操作。
 
-## 公開唯讀 Demo 部署
+## 公開 Demo 部署
 
-[部署與驗證說明](docs/deployment.md)包含 VM、免費 Cloudflare Tunnel、管理者限定的錢包操作與 main 自動部署設定。訪客免登入查詢公開鏈上資料；VM 主動拉取驗證後映像，不需要 CI SSH 憑證。公開網址：https://wallet.tedlin.fyi/ 。每次 push main 通過 CI 後發布映像，VM 每兩分鐘檢查更新。
+[部署與驗證說明](docs/deployment.md)包含 VM、免費 Cloudflare Tunnel、共用測試錢包模式與 main 自動部署設定。共用模式下，訪客免網站登入使用同一個測試錢包；簽署新交易及匯出加密金鑰仍需錢包密碼，錢包管理操作停用。VM 主動拉取驗證後映像，不需要 CI SSH 憑證。公開網址：https://wallet.tedlin.fyi/ 。每次 push main 通過 CI 後發布映像，VM 每兩分鐘檢查更新。

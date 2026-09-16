@@ -34,6 +34,6 @@ EVM receipt success, canonical block inclusion and finality are checked separate
 
 Account deployment and a transfer have been tested on Ethereum Sepolia. This experiment currently runs from the command line only.
 
-## Public read-only demo deployment
+## Public demo deployment
 
-See [deployment setup and verification](docs/deployment.md) for the VM, free Cloudflare Tunnel, owner-only wallet operations, and main-branch CI/CD. Visitors can query public chain data without login. The VM pulls verified images without CI SSH credentials. Live demo: https://wallet.tedlin.fyi/. Main pushes publish verified images; the VM checks for updates every two minutes.
+See [deployment setup and verification](docs/deployment.md) for the VM, free Cloudflare Tunnel, shared test wallet mode, and main-branch CI/CD. In shared mode, visitors use the same test wallet without a website login; signing new transactions and exporting encrypted keys require the wallet password. Wallet administration remains disabled. The VM pulls verified images without CI SSH credentials. Live demo: https://wallet.tedlin.fyi/. Main pushes publish verified images; the VM checks for updates every two minutes.
