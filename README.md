@@ -4,6 +4,36 @@
 
 [三分鐘展示腳本](docs/demo-script.md) · [交易驗收紀錄](docs/onchain-acceptance-2026-09-15.md) · [程序中止恢復驗證](docs/process-recovery.md)
 
+## Why this project
+
+FlowLedger 不是以「支援多少條鏈」為主要目標，而是用一個可執行的錢包原型探索後端交易系統最難處理的邊界：
+
+- RPC 可能已收到交易，但 HTTP response 在回程中遺失。
+- 同一個使用者操作可能因重試、並發請求或程序重啟而被處理多次。
+- 「已廣播」、「已上鏈」、「執行成功」與「已 finalized」是不同狀態。
+- EVM nonce、Solana recent blockhash 與 TRON TAPOS 有不同的過期與恢復語義。
+
+因此專案把重點放在 **reliable transaction lifecycle**：簽署後先持久化、以 quote ID 防止重複簽署、在不確定的廣播結果後重送相同 signed bytes，並分開核對 receipt、canonical block 與 finality。
+
+### Engineering highlights
+
+| 問題 | FlowLedger 的處理方式 | 可重跑證據 |
+| --- | --- | --- |
+| 廣播結果不確定 | 廣播前將 hash 與 signed raw transaction 原子寫入 journal；重試不重新簽署 | `TestUnknownBroadcastRestartReusesRaw` |
+| 並發重送 | 同一 quote 只簽署／廣播一次，後續請求回傳已有記錄 | `TestConcurrentSendSignsExactQuoteOnce` |
+| 程序中止 | 重啟後讀回 journal、保留 nonce 保護並重播同一筆 bytes | `TestProcessKillRestartReusesRaw` |
+| 慢查詢覆蓋新狀態 | 以 version-checked journal update 保留較新的 receipt／reorg 觀測 | `TestSendConcurrentStateUpdatePreservesLatest*` |
+| 鏈重組 | 重新核對 receipt block hash 與 canonical header，不只依賴 confirmation count | `TestHistoryUpdatesReorgDetectedFromRPC` |
+
+### Scope and evidence
+
+- **已實作：** 五個 EVM 測試網、Solana Devnet 與 TRON Shasta 的獨立錢包流程；Sepolia 上的 WETH／Uniswap V3 交換流程。
+- **鏈上驗收：** 2026-09-15 的歷史快照包含 13 筆橫跨五個測試網的成功交易；Polygon 與 Solana outgoing acceptance 仍未完成。
+- **測試證據：** Go unit/integration tests、race detector、Mock RPC 與 process-kill recovery test。Mock 通過不代表真實鏈或 production 環境已驗證。
+- **刻意不宣稱：** mainnet、public multi-user custody、獨立安全稽核、SLA、RPC quorum 或 production readiness。
+
+> **Portfolio positioning:** 這是一個展示「後端交易一致性與故障復原」的 Web3 工程作品，而不是經稽核的生產級 custody 錢包。
+
 ## Quick overview
 
 - **交易可靠性**：簽署後先保存 journal 才廣播；相同 quote ID 重送沿用既有交易，明確重播使用原始簽名 bytes。

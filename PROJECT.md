@@ -1,11 +1,26 @@
-# Project: FlowLedger ERC-4337 Account Abstraction 模組實作
+# Project: FlowLedger ERC-4337 Account Abstraction 模組
+
+## Current status and boundary
+
+這個 package 已完成 UserOperation wire types、v0.6／v0.7 編碼、hash、builder、signer、Bundler JSON-RPC client 與 Mock Bundler 測試。它目前仍是與 EOA 錢包分離的 **library/component implementation**，不是已整合到 FlowLedger UI 的 smart-account 產品流程。
+
+| 範圍 | 狀態 | 證據／限制 |
+|---|---|---|
+| UserOperation types、wire encoding 與 hash | Complete | Unit 與 adversarial tests |
+| Builder、gas calculation 與 signer | Complete | Unit、boundary 與 signature recovery tests |
+| Bundler JSON-RPC client 與 error classification | Complete | `httptest` Mock Bundler integration tests |
+| FlowLedger service／UI integration | Not implemented | 現有 EOA 流程刻意不變 |
+| Deployed smart account 與 live bundler acceptance | Not verified | 不宣稱 testnet end-to-end UserOperation |
+| Paymaster、session key 與 account recovery | Not implemented | 不在目前 package 範圍 |
+
+文件中的「端到端」若指 Mock Bundler，僅代表 package/component 邊界的整合測試；不代表已完成 smart account 部署、public bundler 廣播或真實鏈上收據驗收。
 
 ## Architecture
 - 本模組作為 FlowLedger 的現代智慧合約錢包與帳戶抽象化（Account Abstraction）核心擴充元件，位於 `internal/wallet/erc4337/`（子套件 `package erc4337`）。
 - 完全解耦原則：不更動既有 `internal/wallet/service.go` 的 EOA 發送流程，不寫入 `internal/wallet/journal.go` 既有交易日誌，保持既有工作流程 100% 穩定相容。
 - 密碼學與 ABI 編碼：直接利用專案既有之 `github.com/ethereum/go-ethereum`（`accounts/abi`, `crypto`, `common`, `common/hexutil`），不引入任何外部第三方依賴。
 - 零浮點數規範：全模組所有 Gas、費用、Nonce、數值計算嚴格採用 `*big.Int` 與純整數運算。
-- 金鑰安全：透過 `Signer` 介面封裝 `KeystoreManager`，簽署後立即執行記憶體抹除（`wipePrivateKey`），確保私鑰絕不洩漏。
+- 金鑰處理：透過 `Signer` 介面封裝 `KeystoreManager`，簽署後對直接持有的私鑰資料執行 best-effort 記憶體清除（`wipePrivateKey`）；Go runtime 與密碼學 library 的其他副本不在此保證範圍。
 
 ## Feature Inventory
 | # | Feature | Description | Milestone | Source |
@@ -20,16 +35,17 @@
 | 8 | Bundler JSON-RPC Client | 實作 BundlerClient，支援 eth_sendUserOperation、eth_estimateUserOperationGas、eth_getUserOperationReceipt 呼叫 | M3 | Survey R3 |
 | 9 | AA 錯誤碼解析與分類 | 支援標準 Bundler RPC 錯誤碼（-32500 至 -32508、-32602）與 EntryPoint 核心代碼（AA10 至 AA99）解析 | M3 | Survey R3 |
 | 10 | 執行緒安全 Mock Bundler 伺服器 | 實作 MockBundlerServer（使用 net/http/httptest），模擬 Bundler 回應、驗證失敗注入與收據輪詢生命週期 | M3 | Survey R3 |
-| 11 | 端對端測試套件 (Tiers 1-4) | 涵蓋功能覆蓋、極限邊界、跨功能組合與真實應用場景之黑箱端對端測試套件 | M4 (E2E Track) | Survey R4 |
-| 12 | 對抗性覆蓋強化與 Race/Lint 審計 | 執行對抗性極限測試、go test -race ./internal/wallet/... 與 go vet ./... 100% 通過驗證 | M4 (Hardening) | Survey R4 |
+| 11 | Package 整合測試套件 (Tiers 1-4) | 涵蓋功能、極限邊界、跨功能組合與 Mock Bundler 黑箱場景；不代表 public bundler 鏈上 E2E | M4 (Integration Track) | Survey R4 |
+| 12 | 對抗性覆蓋強化與 Race/Vet 檢查 | 執行對抗性邊界測試、`go test -race ./internal/wallet/...` 與 `go vet ./...` | M4 (Hardening) | Survey R4 |
 
 ## Milestones
 | # | Name | Scope | Dependencies | Status |
 |---|------|-------|-------------|--------|
-| M1 | UserOperation 核心結構與 ABI/Hash 計算 (R1) | Features 1, 2, 3: types.go, encoding.go, hash.go, 官方測試向量單元測試 | None | IN_PROGRESS |
-| M2 | UserOperation Signer 與 Builder (R2) | Features 4, 5, 6, 7: builder.go, signer.go, PreVerificationGas, Keystore 整合 | M1 | PLANNED |
-| M3 | Bundler JSON-RPC Client 與 Mock 架構 (R3) | Features 8, 9, 10: client.go, rpc_types.go, mock_server.go, client_test.go | M1, M2 | PLANNED |
-| M4 | 雙軌驗收與對抗性測試覆蓋強化 (R4) | Features 11, 12: 通過 100% E2E 測試套件、對抗性漏洞掃描、Race 與 Lint 嚴格審計 | M1, M2, M3, E2E Test Suite | PLANNED |
+| M1 | UserOperation 核心結構與 ABI/Hash 計算 (R1) | Features 1, 2, 3: types.go, encoding.go, hash.go, 測試向量與單元測試 | None | COMPLETE |
+| M2 | UserOperation Signer 與 Builder (R2) | Features 4, 5, 6, 7: builder.go, signer.go, PreVerificationGas, Keystore 整合 | M1 | COMPLETE |
+| M3 | Bundler JSON-RPC Client 與 Mock 架構 (R3) | Features 8, 9, 10: client.go, rpc_types.go, mock_server.go, client_test.go | M1, M2 | COMPLETE (MOCK) |
+| M4 | Package hardening | 對抗性、boundary、JSON concurrency、Race 與 Vet 檢查 | M1, M2, M3 | COMPLETE (LOCAL) |
+| M5 | Live smart-account vertical slice | 部署 account、連接 public bundler、廣播 UserOperation 並核對鏈上 receipt | M1–M4 | NOT STARTED |
 
 ## Interface Contracts
 
