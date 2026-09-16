@@ -78,6 +78,8 @@ Google 水龍頭取得 0.05 Sepolia ETH；TRON 官方連結水龍頭取得測試
 
 ## 尚未完成
 
+以下是當日狀態。Polygon Amoy 與 Solana Devnet 的原生幣發送已於 [2026-09-16 補齊](onchain-acceptance-2026-09-16.md)。
+
 - Polygon Amoy：地址已建立、發送實作及 Mock 已驗證，但尚未取得 POL 並完成實際廣播。官方水龍頭要求同意條款及第三方身分驗證，等待使用者授權。
 - Solana Devnet：地址已建立；公開 RPC 水龍頭回覆限流。替代水龍頭要求 GitHub 身分授權，尚未完成入金與實際廣播。
 - 其他 EVM 網路的 DEX、Solana SPL／DEX、TRON DEX 未實作。
