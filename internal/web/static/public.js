@@ -1,29 +1,27 @@
 'use strict';
-document.getElementById('public-query').addEventListener('submit', async (event) => {
-  event.preventDefault();
-  const button = event.currentTarget.querySelector('button');
-  if (button.disabled) return;
-  const result = document.getElementById('query-result');
-  const value = document.getElementById('query-value').value.trim();
-  const kind = document.getElementById('query-kind').value;
-  let path = '/api/network';
-  if (kind === 'balance') {
-    if (!/^0x[0-9a-fA-F]{40}$/.test(value)) { result.textContent = '請輸入有效的 0x 地址。'; return; }
-    path = '/api/balance?address=' + encodeURIComponent(value);
-  } else if (kind === 'transaction') {
-    if (!/^0x[0-9a-fA-F]{64}$/.test(value)) { result.textContent = '請輸入有效的交易 Hash。'; return; }
-    path = '/api/transactions/' + encodeURIComponent(value);
+(() => {
+  // Reuse the wallet layout without loading private wallet controllers or data.
+  $('wallet-dashboard').hidden = false;
+  $('account-select').append(node('option', '公開唯讀展示 · 未選擇地址'));
+  $('account-select').disabled = true;
+  $('wallet-history').textContent = '錢包交易紀錄僅限擁有者查看；公開交易可至交易查核查詢。';
+  $('token-list').textContent = '尚未選擇公開觀察地址。';
+  $('history-search').disabled = true;
+  $('wallet-balance-time').textContent = '請至地址餘額查詢公開地址；此處不顯示擁有者資產。';
+  const allowedForms = new Set(['balance-form', 'transaction-form']);
+  for (const form of document.querySelectorAll('form')) {
+    if (allowedForms.has(form.id)) continue;
+    for (const control of form.querySelectorAll('input,select,button,textarea')) control.disabled = true;
+    form.append(node('p', '此功能僅限擁有者登入後使用。', 'field-hint'));
   }
-  button.disabled = true;
-  result.textContent = '查詢中…';
-  try {
-    const response = await fetch(document.getElementById('network').value + path, {signal: AbortSignal.timeout(15000)});
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || '查詢失敗，請稍後再試。');
-    result.textContent = JSON.stringify(data, null, 2);
-  } catch (error) {
-    result.textContent = '無法取得結果：' + error.message;
-  } finally {
-    button.disabled = false;
+  const allowedButtons = new Set(['menu-toggle', 'menu-close', 'menu-backdrop', 'theme-toggle', 'refresh-network', 'refresh-wallet']);
+  for (const button of document.querySelectorAll('button')) {
+    if (allowedButtons.has(button.id) || allowedForms.has(button.closest('form')?.id)) continue;
+    button.disabled = true;
+    button.title = '僅限擁有者登入後使用';
   }
-});
+  $('refresh-wallet').addEventListener('click', () => { location.hash = 'balance-panel'; $('address').focus(); });
+  for (const option of $('network-select').options) {
+    if (['/solana', '/tron'].includes(option.value)) option.disabled = true;
+  }
+})();

@@ -82,9 +82,13 @@ func RequireAccessToken(next http.Handler, token string) http.Handler {
 			return
 		}
 		if _, public := r.Context().Value(publicOriginKey{}).(string); public && publicReadAllowed(r) {
-			if r.URL.Path == "/" {
+			if r.URL.Path == "/" || strings.HasSuffix(r.URL.Path, "/") {
 				w.Header().Set("Content-Type", "text/html; charset=utf-8")
-				_ = publicPage.Execute(w, nil)
+				native := "ETH"
+				if r.URL.Path == "/net/polygon/" {
+					native = "POL"
+				}
+				_ = publicPage.Execute(w, map[string]any{"Native": native, "Public": true})
 			} else {
 				publicQueries.ServeHTTP(w, r)
 			}

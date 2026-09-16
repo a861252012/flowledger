@@ -140,6 +140,13 @@ $('balance-form').addEventListener('submit', async (event) => {
     const data = await request(`/api/balance?address=${encodeURIComponent(input.value)}`);
     const amount = node('div', data.eth, 'balance-value mono');
     amount.append(node('span', nativeSymbol));
+    if (document.body.dataset.public === 'true') {
+      $('wallet-balance').replaceChildren(node('span', data.eth), node('small', nativeSymbol));
+      $('wallet-balance-time').textContent = `公開地址查核 · ${time(data.checkedAt)}`;
+      $('account-select').options[0].textContent = data.address;
+      $('wallet-address').textContent = data.address;
+      $('wallet-explorer').href = `${explorerURL}/address/${encodeURIComponent(data.address)}`;
+    }
     result.className = 'result loaded';
     result.replaceChildren(amount, node('p', data.address, 'mono'), details([
       ['完整數值', `${data.wei} wei`], ['查詢區塊', data.block], ['查核時間', time(data.checkedAt)],
@@ -203,4 +210,4 @@ $('network-select').addEventListener('change', () => { location.href = (['/solan
 for (const element of document.querySelectorAll('[data-network-name]')) element.textContent = networkName;
 
 document.querySelector('.brand').href = networkPrefix + '/';
-document.title = `Testnet Wallet Lab · ${networkName} 錢包`;
+document.title = `FlowLedger · ${networkName} 錢包`;

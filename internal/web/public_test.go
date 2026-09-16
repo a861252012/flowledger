@@ -76,3 +76,20 @@ func TestPublicNavigationAndSeparateBudgets(t *testing.T) {
 		t.Fatal("public traffic exhausted admin budget")
 	}
 }
+
+func TestPublicWorkspaceUsesSharedTemplate(t *testing.T) {
+	h := WithPublicOrigin(RequireAccessToken(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) }), "0123456789abcdef0123456789abcdef"), "https://wallet.example")
+	for _, path := range []string{"/", "/net/base/", "/net/polygon/"} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest("GET", "http://wallet.example"+path, nil))
+		body := w.Body.String()
+		for _, marker := range []string{`id="app-sidebar"`, `id="wallet-dashboard"`, `id="public-query"`, `/static/public.js`} {
+			if w.Code != 200 || !strings.Contains(body, marker) {
+				t.Fatalf("shared public workspace %s missing %s: %d", path, marker, w.Code)
+			}
+		}
+		if strings.Contains(body, `/static/wallet.js`) || strings.Contains(body, `/static/workspace.js`) {
+			t.Fatal("private controllers loaded for visitor")
+		}
+	}
+}

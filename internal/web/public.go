@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-var publicPage = template.Must(template.ParseFS(assets, "templates/public.html"))
+var publicPage = template.Must(template.ParseFS(assets, "templates/index.html"))
 
 // Explicit observation routes only: a GET wallet route can still expose private
 // state or refresh a journal. Account-scoped handlers must never be public.
@@ -15,11 +15,15 @@ func publicReadAllowed(r *http.Request) bool {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		return false
 	}
+	switch r.URL.Path {
+	case "/net/arbitrum/", "/net/base/", "/net/optimism/", "/net/polygon/":
+		return true
+	}
 	if path.Clean(r.URL.Path) != r.URL.Path {
 		return false
 	}
 	path := r.URL.Path
-	if path == "/" || strings.HasPrefix(path, "/static/") {
+	if path == "/" || path == "/showcase" || strings.HasPrefix(path, "/static/") {
 		return true
 	}
 	if after, ok := strings.CutPrefix(path, "/net/"); ok {

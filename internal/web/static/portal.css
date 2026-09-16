@@ -269,3 +269,6 @@ body[data-wallet-family="showcase"] .wallet-work-grid { display: grid; grid-temp
 #account-name { width: 100%; }
 #account-feedback { overflow-wrap: anywhere; }
 @media (max-width: 480px) { #account-manager { padding: 18px; } .account-dialog-header { gap: 8px; } }
+
+.public-access { padding: 1rem 1.5rem; }
+.public-access p { margin: .4rem 0; }

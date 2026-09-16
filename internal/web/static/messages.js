@@ -1,6 +1,18 @@
 'use strict';
 // Source-message catalog: English and Simplified Chinese. Traditional Chinese is the source.
 window.FlowMessages = {
+  "公開唯讀展示": ["Public read-only demo", "公开只读展示"],
+  "公開查詢不需登入。建立、解鎖、簽名及轉帳僅限擁有者。": ["Public queries need no login. Creating, unlocking, signing and sending require owner access.", "公开查询无需登录。创建、解锁、签名及转账仅限所有者。"],
+  "擁有者登入": ["Owner sign in", "所有者登录"],
+  "查詢地址餘額": ["Check address balance", "查询地址余额"],
+  "查核交易": ["Check transaction", "核查交易"],
+  "公開唯讀展示 · 未選擇地址": ["Public demo · No address selected", "公开只读展示 · 未选择地址"],
+  "錢包交易紀錄僅限擁有者查看；公開交易可至交易查核查詢。": ["Wallet history is private. Look up a public transaction under Transaction check.", "钱包交易记录仅限所有者查看；公开交易可前往交易核查。"],
+  "尚未選擇公開觀察地址。": ["No public address selected.", "尚未选择公开观察地址。"],
+  "請至地址餘額查詢公開地址；此處不顯示擁有者資產。": ["Look up a public address under Address balance. Owner assets are private.", "请前往地址余额查询公开地址；此处不显示所有者资产。"],
+  "此功能僅限擁有者登入後使用。": ["Sign in as the owner to use this feature.", "此功能仅限所有者登录后使用。"],
+  "僅限擁有者登入後使用": ["Requires owner sign in", "仅限所有者登录后使用"],
+
   "目前錢包": ["Current wallet","当前钱包"],
   "切換錢包": ["Switch wallet","切换钱包"],
   "管理錢包": ["Manage wallets","管理钱包"],

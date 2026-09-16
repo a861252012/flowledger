@@ -7,7 +7,7 @@ Cloudflare Free + 公開 Tunnel + Oracle Ubuntu VM + GitHub Actions/GHCR。
 
 ## 權限與資源邊界
 
-- 設定 `PUBLIC_ORIGIN` 後，未登入首頁為獨立公開查詢頁。公開 GET/HEAD 僅允許靜態檔案、EVM 網路、地址餘額、代幣公開餘額與交易查詢。
+- 設定 `PUBLIC_ORIGIN` 後，未登入首頁與本機錢包共用 `index.html`、側欄、總覽與語言／主題控制。訪客只載入唯讀控制器，不請求私人錢包資料；查詢公開地址後可在總覽查看餘額。公開 GET/HEAD 僅允許工作區頁面、作品頁、靜態檔案、EVM 網路、地址餘額、代幣公開餘額與交易查詢。
 - EVM 支援 Ethereum/Arbitrum/Base/OP Sepolia 與 Polygon Amoy。Solana/TRON 共用錢包狀態不對訪客公開。
 - 帳戶清單、CSRF token、錢包狀態、交易日誌、scanner、faucet，以及全部 POST/PUT/DELETE 均需管理者認證。新路由預設不公開。
 - `/login` 使用 VM 上隨機產生的 `WALLET_ACCESS_TOKEN`，不可分享給訪客。建立、匯入、簽名、轉帳仍有原本的密碼及 CSRF 檢查。

@@ -1,3 +1,0 @@
-#query-result { white-space: pre-wrap; overflow-wrap: anywhere; }
-#public-query { display: grid; gap: .75rem; }
-#public-query input, #public-query select { width: 100%; min-width: 0; box-sizing: border-box; }
