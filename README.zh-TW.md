@@ -36,4 +36,4 @@ EVM 收據是否成功、所在區塊是否仍在主鏈，以及是否 finalized
 
 ## 公開唯讀 Demo 部署
 
-[部署與驗證說明](docs/deployment.md)包含 VM、免費 Cloudflare Tunnel、管理者限定的錢包操作與 main 自動部署設定。訪客免登入查詢公開鏈上資料；VM 主動拉取驗證後映像，不需要 CI SSH 憑證。完成雲端設定與驗證前，遠端部署仍停用。
+[部署與驗證說明](docs/deployment.md)包含 VM、免費 Cloudflare Tunnel、管理者限定的錢包操作與 main 自動部署設定。訪客免登入查詢公開鏈上資料；VM 主動拉取驗證後映像，不需要 CI SSH 憑證。公開網址：https://wallet.tedlin.fyi/ 。每次 push main 通過 CI 後發布映像，VM 每兩分鐘檢查更新。

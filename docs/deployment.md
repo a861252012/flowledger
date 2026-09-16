@@ -22,7 +22,7 @@ Cloudflare Free + 公開 Tunnel + Oracle Ubuntu VM + GitHub Actions/GHCR。
 
 ## Cloudflare
 
-網域已購買，wallet-demo Tunnel 已建立；VM connector、HTTPS/WAF 尚需完成設定及驗收。Zero Trust 結帳未啟用。
+wallet-demo Tunnel 已連線，公開路由與 HTTPS 已實測。使用 Cloudflare Free；Zero Trust 結帳未啟用。
 
 1. 網域保留 Free。由帳戶 **Networking → Tunnels** 建立 `wallet-demo`，不要進入 Zero Trust 結帳。
 2. 在 VM 以官方 cloudflared 系統服務連接；憑證僅放 VM root-only 檔案，不放 Git/CI/log。
@@ -101,7 +101,7 @@ python3 tests/deployment/smoke.py wallet-demo-test local-test
 
 上線前仍需：實際 VM 安裝、免費 Tunnel/WAF/HTTPS、匿名外部查詢與管理者拒絕測試、VM 直連拒絕、首次 main CI→遠端驗收。
 備份應在持有 deploy.lock 且容器停止時封存 wallet，加密保存於 VM 外；隔離無網路還原測試不可省略。
-目前尚未選定私人備份目的地，不把本機 smoke 當成災難復原完成。
+私人備份目的地為管理者 Mac；不要把本機 smoke 當成已有錢包資料的災難復原證據。
 所有安全控制降低風險，不保證沒有漏洞；沒有執行真實鏈交易。
 
 ## 2026-09-17 本機驗證
@@ -113,3 +113,29 @@ python3 tests/deployment/smoke.py wallet-demo-test local-test
 - govulncheck v1.8.0 無可達已知漏洞；另有 2 個 imported-package、20 個 required-module 不可達漏洞，不代表完整安全稽核。
 - 上述為本機驗證紀錄；雲端上線狀態須以後續實測為準。
 - ARM64 與 AMD64 實際容器均通過隔離 smoke：non-root/readonly、登入/CSRF、容器替換保留錢包與舊 session 拒絕。沒有真實 RPC 或鏈上交易。
+
+## 2026-09-17 雲端驗收
+
+- 首次應用版本 `cd7f97c29bb3abc2180e3c536f5724617964e2d2`；GitHub Actions [35127343438](https://github.com/a861252012/testnet-wallet-lab/actions/runs/35127343438) 全部通過。
+- GHCR image 公開且 VM 無 registry credentials；部署日誌驗證 binary revision、認證、Origin、Cookie、CSRF 成功。
+- `https://wallet.tedlin.fyi/` 回傳 200，HTTP 301 至 HTTPS；Cloudflare 通用憑證使用中，最低 TLS 1.2、TLS 1.3 啟用。
+- 公開頁與五個 EVM 測試網 network endpoint 實際回傳 200。匿名錢包/帳戶/日誌/Solana/TRON/faucet 回傳 401。
+- 外部 HTTPS 管理者登入成功，Cookie Secure/HttpOnly/SameSite=Strict；錯誤 Origin 與缺少 CSRF 的寫入要求均拒絕，未執行鏈上交易。
+- Cloudflare Managed Free Ruleset 一律使用中；`Wallet demo login protection` 對此 hostname 的 POST `/login` 設定每 IP 5 次/10 秒，超出封鎖 10 秒。此為免費規則限制，不是費用硬上限。
+- VM 使用 Ubuntu 套件庫 Docker/Compose 與 Cloudflare 官方 cloudflared；OS 更新已安裝，apt 安全更新 timer 啟用。停用 root SSH、密碼登入與不需要的 rpcbind。
+- cloudflared 使用 DynamicUser、systemd credential 檔、唯讀系統與 160 MiB 上限。應用僅 bind `127.0.0.1:8090`。
+- `wallet-demo-update.timer` 已啟用，每輪結束後 120 秒查 main；沒有 CI 入站 SSH 憑證。
+- 管理者登入憑證只保留 VM root-only `.env` 與管理者 Mac 的受限檔案，不在 repository。
+- 異地備份選用管理者 Mac，透過 age 加密；VM 目前尚未建立使用者錢包。
+
+管理時可在 OCI 的 wallet-demo-security 暫時加入目前管理者 IP/32 的 TCP 22，使用既有 wallet-demo-admin SSH key，作業後移除。不要開放全網 SSH，也不要公開 8090。
+
+## 管理者 Mac 加密備份
+
+先暫時開放管理者 IP/32 的 SSH，再執行 `bash scripts/deploy/backup-to-mac.sh VM_IPV4`（Mac 需安裝 age）。
+腳本持有部署鎖、暫停 app 後封存 wallet、環境設定、image digest 與 Compose；結束或失敗均嘗試啟動 app。
+備份會造成短暫網站中斷，完成後須檢查 HTTPS 與健康狀態。
+加密檔放在 `~/Documents/wallet-demo-backups/`，解密金鑰放在 `~/.ssh/wallet-demo-secrets/backup-age.key`，權限分別為 0700/0600。
+金鑰遺失便無法還原；應自行另外離線保管，不能只依賴同一台 Mac。不得把金鑰提交 Git 或與備份一起分享。
+這是手動備份，Mac 關機不會執行，也未設定自動排程；建立/匯入測試錢包後應再做備份。
+還原只能先在隔離目錄解密，使用 `--network none` 的一次性容器驗證，不能直接覆蓋現行 VM wallet。
