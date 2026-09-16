@@ -1,10 +1,16 @@
 'use strict';
+const accountPrefix = location.pathname.match(/^\/accounts\/[a-f0-9]{32}/)?.[0] || '';
+const networkSuffix = location.pathname.slice(accountPrefix.length).match(/^\/net\/(arbitrum|base|optimism|polygon)(?:\/|$)/)?.[0].replace(/\/$/, '') || '';
+const networkConfig = { '': ['Ethereum Sepolia','https://sepolia.etherscan.io',11155111], '/net/arbitrum': ['Arbitrum Sepolia','https://sepolia.arbiscan.io',421614], '/net/base': ['Base Sepolia','https://sepolia.basescan.org',84532], '/net/optimism': ['OP Sepolia','https://testnet-explorer.optimism.io',11155420], '/net/polygon': ['Polygon Amoy','https://amoy.polygonscan.com',80002] }[networkSuffix];
+const networkPrefix = accountPrefix + networkSuffix;
+const [networkName, explorerURL, networkID] = networkConfig;
+const nativeSymbol = networkID === 80002 ? 'POL' : 'ETH';
 const $ = (id) => document.getElementById(id);
-const time = (value) => new Date(value).toLocaleString('zh-TW', { hour12: false });
+const time = (value) => new Date(value).toLocaleString(document.documentElement.lang, { hour12: false });
 let copyTimer;
 
 async function request(path) {
-  const response = await fetch(path, { signal: AbortSignal.timeout(12000) });
+  const response = await fetch(networkPrefix + path, { signal: AbortSignal.timeout(12000) });
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || '查詢失敗，請稍後重試。');
   return data;
@@ -30,7 +36,7 @@ function details(entries) {
 
 function explorer(kind, value) {
   const link = node('a', '在 Etherscan 核對 ↗', 'explorer');
-  link.href = `https://sepolia.etherscan.io/${kind}/${encodeURIComponent(value)}`;
+  link.href = `${explorerURL}/${kind}/${encodeURIComponent(value)}`;
   link.target = '_blank';
   link.rel = 'noopener noreferrer';
   return link;
@@ -129,11 +135,11 @@ $('balance-form').addEventListener('submit', async (event) => {
   button.querySelector('span').textContent = '查詢中…';
   input.readOnly = true;
   result.className = 'result loading';
-  result.replaceChildren(node('p', '正在讀取 Sepolia 餘額…', 'loading-label'));
+  result.replaceChildren(node('p', `正在讀取 ${networkName} 餘額…`, 'loading-label'));
   try {
     const data = await request(`/api/balance?address=${encodeURIComponent(input.value)}`);
     const amount = node('div', data.eth, 'balance-value mono');
-    amount.append(node('span', 'ETH'));
+    amount.append(node('span', nativeSymbol));
     result.className = 'result loaded';
     result.replaceChildren(amount, node('p', data.address, 'mono'), details([
       ['完整數值', `${data.wei} wei`], ['查詢區塊', data.block], ['查核時間', time(data.checkedAt)],
@@ -168,7 +174,7 @@ $('transaction-form').addEventListener('submit', async (event) => {
     result.replaceChildren(node('span', labels[data.state] || '結果未知', `state-badge${tones[data.state] ?? ' warning'}`), node('p', data.hash, 'mono'));
     if (data.state === 'succeeded' || data.state === 'reverted') result.append(details([
       ['區塊高度', data.block], ['確認數', data.confirmations], ['消耗 gas', data.gasUsed],
-      ['實際手續費', `${data.feeEth} ETH`], ['查核時間', time(data.checkedAt)],
+      ['實際手續費', `${data.feeEth} ${nativeSymbol}`], ['查核時間', time(data.checkedAt)],
     ]));
     else result.append(node('p', `查核時間 ${time(data.checkedAt)}。尚無可確認的執行結果，請稍後重新查詢。`));
     result.append(resultActions('tx', data.hash), node('p', '確認數不等於最終確定（finality）。這是本次查核的快照；重新查詢可更新結果。', 'note'));
@@ -189,16 +195,12 @@ for (const id of ['address', 'hash']) {
   });
 }
 
-function updateNavigation() {
-  const current = window.location.hash || '#overview';
-  for (const link of document.querySelectorAll('nav a')) {
-    const active = link.getAttribute('href') === current;
-    link.classList.toggle('active', active);
-    if (active) link.setAttribute('aria-current', 'location');
-    else link.removeAttribute('aria-current');
-  }
-}
-window.addEventListener('hashchange', updateNavigation);
-updateNavigation();
 $('refresh-network').addEventListener('click', refreshNetwork);
 refreshNetwork();
+
+$('network-select').value = networkSuffix;
+$('network-select').addEventListener('change', () => { location.href = (['/solana','/tron'].includes($('network-select').value) ? '' : accountPrefix) + $('network-select').value + '/'; });
+for (const element of document.querySelectorAll('[data-network-name]')) element.textContent = networkName;
+
+document.querySelector('.brand').href = networkPrefix + '/';
+document.title = `FlowLedger · ${networkName} 錢包`;

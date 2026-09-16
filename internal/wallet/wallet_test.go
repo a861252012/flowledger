@@ -19,7 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
-func mockRPC(t *testing.T, handler func(method string, params json.RawMessage) any) *chain.Client {
+func mockRPC(t *testing.T, handler func(method string, params json.RawMessage) any, chainIDs ...int64) *chain.Client {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -52,6 +52,10 @@ func mockRPC(t *testing.T, handler func(method string, params json.RawMessage) a
 	}))
 	t.Cleanup(server.Close)
 	c, err := chain.New(server.URL)
+	if len(chainIDs) > 0 {
+		c.Close()
+		c, err = chain.NewNetwork(chainIDs[0], []string{server.URL})
+	}
 	if err != nil {
 		t.Fatal(err)
 	}

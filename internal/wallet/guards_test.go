@@ -29,14 +29,17 @@ type rpcState struct {
 	raws           []string
 	allowance      *big.Int
 	tokenBalance   *big.Int
+	tokenDecimals  uint8
 	swapOutput     *big.Int
 	missingPool    bool
 	failSimulation bool
+	broadcastCheck func(string) error
+	checkRan       bool
 }
 
 func guardedFixture(t *testing.T) (*Service, *rpcState) {
 	t.Helper()
-	state := &rpcState{chainID: "0xaa36a7", balance: new(big.Int).Exp(big.NewInt(10), big.NewInt(20), nil), gas: 48000, allowance: big.NewInt(0), tokenBalance: big.NewInt(10000000), swapOutput: big.NewInt(1000000)}
+	state := &rpcState{chainID: "0xaa36a7", balance: new(big.Int).Exp(big.NewInt(10), big.NewInt(20), nil), gas: 48000, allowance: big.NewInt(0), tokenBalance: big.NewInt(10000000), tokenDecimals: 6, swapOutput: big.NewInt(1000000)}
 	c := mockRPC(t, func(method string, params json.RawMessage) any {
 		state.mu.Lock()
 		defer state.mu.Unlock()
@@ -63,6 +66,7 @@ func guardedFixture(t *testing.T) (*Service, *rpcState) {
 			json.Unmarshal(params, &args)
 			var call map[string]string
 			json.Unmarshal(args[0], &call)
+			contract := common.HexToAddress(call["to"])
 			input := call["input"]
 			if input == "" {
 				input = call["data"]
@@ -103,11 +107,17 @@ func guardedFixture(t *testing.T) (*Service, *rpcState) {
 				return nil
 			}
 			var result []byte
+			tokenSymbol, tokenDecimals := "TST", state.tokenDecimals
+			if contract == common.HexToAddress(USDCAddress) {
+				tokenSymbol = "USDC"
+			} else if contract == common.HexToAddress(WETHAddress) {
+				tokenSymbol, tokenDecimals = "WETH", 18
+			}
 			switch method.Name {
 			case "symbol":
-				result, _ = method.Outputs.Pack("TST")
+				result, _ = method.Outputs.Pack(tokenSymbol)
 			case "decimals":
-				result, _ = method.Outputs.Pack(uint8(6))
+				result, _ = method.Outputs.Pack(tokenDecimals)
 			case "balanceOf":
 				result, _ = method.Outputs.Pack(state.tokenBalance)
 			case "allowance":
@@ -123,6 +133,12 @@ func guardedFixture(t *testing.T) (*Service, *rpcState) {
 			if err := json.Unmarshal(params, &args); err != nil {
 				t.Error(err)
 				return nil
+			}
+			if state.broadcastCheck != nil {
+				state.checkRan = true
+				if err := state.broadcastCheck(args[0]); err != nil {
+					return err
+				}
 			}
 			state.raws = append(state.raws, args[0])
 			if state.unknown {
@@ -180,7 +196,7 @@ func TestSendRejectsChangedConditions(t *testing.T) {
 			case "funds":
 				state.balance = big.NewInt(0)
 			case "expiry":
-				s.quotes.quotes[q.ID].ExpiresAt = time.Now().Add(-time.Second)
+				s.quotes.quotes[QuoteID(q.ID)].ExpiresAt = time.Now().Add(-time.Second)
 			case "password":
 				password = "incorrect-password"
 			case "persistence":
@@ -218,16 +234,14 @@ func TestConcurrentSendSignsExactQuoteOnce(t *testing.T) {
 	var wg sync.WaitGroup
 	results := make(chan *SendResponse, 4)
 	for i := 0; i < 4; i += 1 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			result, err := s.Send(context.Background(), q.ID, "fixture-password-123")
 			if err != nil {
 				t.Error(err)
 				return
 			}
 			results <- result
-		}()
+		})
 	}
 	wg.Wait()
 	close(results)
@@ -249,6 +263,35 @@ func TestConcurrentSendSignsExactQuoteOnce(t *testing.T) {
 	from, err := types.Sender(types.LatestSignerForChainID(big.NewInt(chain.SepoliaID)), &tx)
 	if err != nil || from.Hex() != q.From || tx.Type() != types.DynamicFeeTxType || tx.ChainId().Int64() != chain.SepoliaID || tx.To().Hex() != q.To || tx.Value().String() != "1" || tx.GasFeeCap().String() != q.MaxFeePerGas || tx.GasTipCap().String() != q.MaxPriorityFeePerGas || strconv.FormatUint(tx.Gas(), 10) != q.GasLimit {
 		t.Fatal("signed transaction did not match reviewed quote")
+	}
+}
+
+func TestSendPersistsSignedTransactionBeforeBroadcast(t *testing.T) {
+	s, state := guardedFixture(t)
+	q := ethQuote(t, s)
+	state.broadcastCheck = func(raw string) error {
+		data, err := os.ReadFile(filepath.Join(s.walletDir, "journal.json"))
+		if err != nil {
+			return err
+		}
+		var records []*journalRecordDisk
+		if err := json.Unmarshal(data, &records); err != nil {
+			return err
+		}
+		if len(records) != 1 || records[0].State != string(JournalPending) || records[0].SignedRaw != raw || records[0].Version != 1 {
+			return errors.New("broadcast observed before the exact signed transaction became durable")
+		}
+		return nil
+	}
+	result, err := s.Send(context.Background(), q.ID, "fixture-password-123")
+	if err != nil || result.State != string(JournalSubmitted) {
+		t.Fatalf("send result=%+v err=%v", result, err)
+	}
+	state.mu.Lock()
+	checkRan := state.checkRan
+	state.mu.Unlock()
+	if !checkRan {
+		t.Fatal("broadcast boundary was not exercised")
 	}
 }
 func TestUnknownBroadcastRestartReusesRaw(t *testing.T) {
@@ -324,11 +367,11 @@ func TestERC20QuoteAndSignedRecipient(t *testing.T) {
 			s, state := guardedFixture(t)
 			contract := "0x4444444444444444444444444444444444444444"
 			recipient := "0x2222222222222222222222222222222222222222"
-			info, err := s.Token(context.Background(), contract)
+			info, err := s.Token(context.Background(), contract, "")
 			if err != nil || info.Symbol != "TST" || info.Decimals != 6 || info.Balance != "10" {
 				t.Fatalf("token %+v %v", info, err)
 			}
-			q, err := s.Quote(context.Background(), &QuoteRequest{Action: action, Contract: contract, To: recipient, Amount: "1.234567"})
+			q, err := s.Quote(context.Background(), &QuoteRequest{Action: action, Contract: contract, To: recipient, AmountRaw: "1234567"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -349,22 +392,71 @@ func TestERC20QuoteAndSignedRecipient(t *testing.T) {
 		})
 	}
 }
+
+func TestCustomERC20RawAmountDoesNotDependOnRPCDecimals(t *testing.T) {
+	for _, action := range []string{"transfer", "approve"} {
+		t.Run(action, func(t *testing.T) {
+			s, state := guardedFixture(t)
+			req := &QuoteRequest{Action: action, Contract: "0x4444444444444444444444444444444444444444", To: "0x2222222222222222222222222222222222222222", AmountRaw: "1"}
+			var last *QuoteResponse
+			for _, decimals := range []uint8{6, 18} {
+				state.tokenDecimals = decimals
+				q, err := s.Quote(context.Background(), req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if q.AmountRaw != "1" {
+					t.Fatalf("RPC decimals %d changed signed amount to %s", decimals, q.AmountRaw)
+				}
+				decoded, err := DecodeERC20Calldata(common.FromHex(q.Data), int(decimals))
+				if err != nil || decoded.RawAmount.String() != "1" {
+					t.Fatalf("RPC decimals %d changed calldata: %+v %v", decimals, decoded, err)
+				}
+				last = q
+			}
+			req.AmountRaw = ""
+			if _, err := s.Quote(context.Background(), req); err == nil {
+				t.Fatal("custom token quote accepted without exact raw amount")
+			}
+			if _, err := s.Send(context.Background(), last.ID, "fixture-password-123"); err != nil {
+				t.Fatal(err)
+			}
+			raw, _ := hexutil.Decode(state.raws[0])
+			var tx types.Transaction
+			if tx.UnmarshalBinary(raw) != nil {
+				t.Fatal("signed transaction could not be decoded")
+			}
+			decoded, err := DecodeERC20Calldata(tx.Data(), 18)
+			if err != nil || decoded.RawAmount.String() != "1" {
+				t.Fatalf("signed calldata amount changed: %+v %v", decoded, err)
+			}
+		})
+	}
+}
+
+func TestBuiltInTokenRejectsRPCMetadataMismatch(t *testing.T) {
+	s, state := guardedFixture(t)
+	state.tokenDecimals = 18
+	if _, err := s.Token(context.Background(), USDCAddress, ""); err == nil {
+		t.Fatal("Sepolia USDC accepted RPC-provided decimals that differ from the built-in registry")
+	}
+}
 func TestApprovalRevocationAndChangedAllowance(t *testing.T) {
 	s, state := guardedFixture(t)
-	req := &QuoteRequest{Action: "approve", Contract: "0x4444444444444444444444444444444444444444", To: "0x2222222222222222222222222222222222222222", Amount: "1"}
+	req := &QuoteRequest{Action: "approve", Contract: "0x4444444444444444444444444444444444444444", To: "0x2222222222222222222222222222222222222222", AmountRaw: "1000000"}
 	state.allowance = big.NewInt(5)
 	if _, err := s.Quote(context.Background(), req); !errors.Is(err, ErrApprovalRace) {
 		t.Fatalf("nonzero allowance accepted: %v", err)
 	}
-	req.Amount = "0"
+	req.AmountRaw = "0"
 	if _, err := s.Quote(context.Background(), req); err != nil {
 		t.Fatalf("revocation blocked: %v", err)
 	}
-	req.Amount = FormatUnits(maxUint256, 6)
+	req.AmountRaw = maxUint256.String()
 	if _, err := s.Quote(context.Background(), req); !errors.Is(err, ErrUnlimitedAllowanceNotAllowed) {
 		t.Fatal("unlimited allowance accepted")
 	}
-	req.Amount = "1"
+	req.AmountRaw = "1000000"
 	state.allowance = big.NewInt(0)
 	q, err := s.Quote(context.Background(), req)
 	if err != nil {
@@ -401,10 +493,10 @@ func TestQuoteERC20InsufficientETHFunds(t *testing.T) {
 	state.gas = 0                 // If estimateGas is invoked, it would fail
 
 	req := &QuoteRequest{
-		Action:   "transfer",
-		Contract: "0x4444444444444444444444444444444444444444",
-		To:       "0x2222222222222222222222222222222222222222",
-		Amount:   "1",
+		Action:    "transfer",
+		Contract:  "0x4444444444444444444444444444444444444444",
+		To:        "0x2222222222222222222222222222222222222222",
+		AmountRaw: "1000000",
 	}
 
 	_, err := s.Quote(context.Background(), req)

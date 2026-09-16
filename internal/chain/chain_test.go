@@ -85,6 +85,17 @@ func TestTimeoutAndRPCSecretRedaction(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
+	t.Run("canceled context", func(t *testing.T) {
+		c := rpcClient(t, func(method string, _ json.RawMessage) any {
+			t.Errorf("canceled request reached RPC: %s", method)
+			return nil
+		})
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		if _, err := c.Network(ctx); !errors.Is(err, ErrUnavailable) {
+			t.Fatalf("public cancellation error changed: %v", err)
+		}
+	})
 	t.Run("provider error", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Error(w, "private-api-key", 500) }))
 		defer server.Close()
@@ -182,4 +193,56 @@ func TestMissingReceiptIsNotSuccess(t *testing.T) {
 	if _, err := c.Transaction(context.Background(), "0x"+strings.Repeat("a", 64)); !errors.Is(err, ErrNotFound) {
 		t.Fatal(err)
 	}
+}
+
+func TestSendTransactionRPCBoundary(t *testing.T) {
+	to := common.HexToAddress("0x1111111111111111111111111111111111111111")
+	tx := types.NewTx(&types.DynamicFeeTx{
+		ChainID:   big.NewInt(SepoliaID),
+		To:        &to,
+		Gas:       21000,
+		GasFeeCap: big.NewInt(2),
+		GasTipCap: big.NewInt(1),
+		Value:     big.NewInt(1),
+	})
+
+	for _, test := range []struct {
+		name   string
+		result string
+		want   error
+	}{
+		{name: "matching hash", result: tx.Hash().Hex()},
+		{name: "malformed hash", result: "0x1234", want: ErrUnavailable},
+		{name: "different hash", result: common.HexToHash("0x5678").Hex(), want: ErrUnavailable},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := rpcClient(t, func(method string, _ json.RawMessage) any {
+				switch method {
+				case "eth_chainId":
+					return "0xaa36a7"
+				case "eth_sendRawTransaction":
+					return test.result
+				default:
+					t.Errorf("unexpected RPC: %s", method)
+					return nil
+				}
+			})
+			err := c.SendTransaction(context.Background(), tx)
+			if !errors.Is(err, test.want) {
+				t.Fatalf("got %v, want %v", err, test.want)
+			}
+		})
+	}
+
+	t.Run("canceled context", func(t *testing.T) {
+		c := rpcClient(t, func(method string, _ json.RawMessage) any {
+			t.Errorf("canceled send reached RPC: %s", method)
+			return nil
+		})
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		if err := c.SendTransaction(ctx, tx); !errors.Is(err, ErrUnavailable) {
+			t.Fatalf("public cancellation error changed: %v", err)
+		}
+	})
 }

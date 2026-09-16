@@ -300,7 +300,7 @@ func TestHistoryAcceptsFreshReorgStates(t *testing.T) {
 			if err != nil || !updated {
 				t.Fatalf("fresh observation rejected: updated=%v err=%v", updated, err)
 			}
-			if got := s.journal.FindByHash(sent.Hash); got.State != state {
+			if got := s.journal.FindByHash(sent.Hash); string(got.State) != state {
 				t.Fatalf("state=%s", got.State)
 			}
 			if !s.journal.HasInFlightTx() {
@@ -430,8 +430,8 @@ func TestJournalFullRejectsSendWithoutStorageFault(t *testing.T) {
 	for len(s.journal.records) < 1000 {
 		idx := len(s.journal.records) + 1
 		s.journal.records = append(s.journal.records, &JournalRecord{
-			Hash:      fmt.Sprintf("0x%064x", idx),
-			QuoteID:   fmt.Sprintf("quote-%d", idx),
+			Hash:      TransactionHash(fmt.Sprintf("0x%064x", idx)),
+			QuoteID:   QuoteID(fmt.Sprintf("quote-%d", idx)),
 			State:     "succeeded",
 			Version:   1,
 			CreatedAt: time.Now().UTC(),
@@ -1062,12 +1062,7 @@ func TestStorageFaultOnDiskFailureVsCASMismatch(t *testing.T) {
 
 	t.Run("Actual disk write failure in UpdateStateAtomicIfVersion returns error", func(t *testing.T) {
 		s, _ := guardedFixture(t)
-		rec := &JournalRecord{
-			Hash:      "0x1111111111111111111111111111111111111111111111111111111111111111",
-			State:     "pending",
-			CreatedAt: time.Now().UTC(),
-			UpdatedAt: time.Now().UTC(),
-		}
+		rec := signedJournalRecord(t, "legacy-storage-fault")
 		v, err := s.journal.AppendAtomic(rec)
 		if err != nil {
 			t.Fatal(err)
@@ -1079,7 +1074,7 @@ func TestStorageFaultOnDiskFailureVsCASMismatch(t *testing.T) {
 		}
 		s.journal.walletDir = filepath.Join(blockerFile, "wallet")
 
-		updated, err := s.journal.UpdateStateAtomicIfVersion(rec.Hash, v, "submitted", "", "", "")
+		updated, err := s.journal.UpdateStateAtomicIfVersion(string(rec.Hash), v, "submitted", "", "", "")
 		if err == nil {
 			t.Fatal("expected disk error on invalid directory")
 		}

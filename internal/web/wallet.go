@@ -50,45 +50,28 @@ func registerWalletRoutes(mux *http.ServeMux, ws *wallet.Service) {
 		return
 	}
 
-	// Security filter for all wallet endpoints
-	walletFilter := func(handler http.HandlerFunc) http.HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) {
-			// Host check (localhost, 127.0.0.1, [::1])
-			if !isValidHost(r.Host) {
-				respondWallet(w, http.StatusBadRequest, nil, errors.New("無效的 Host 標頭，僅允許本機存取"))
-				return
-			}
+	walletFilter := func(handler http.HandlerFunc) http.HandlerFunc { return localWalletFilter(ws.CSRFToken(), handler) }
 
-			// Reject cross-origin
-			if sfs := r.Header.Get("Sec-Fetch-Site"); sfs == "cross-site" {
-				respondWallet(w, http.StatusForbidden, nil, errors.New("跨來源請求已被拒絕"))
-				return
-			}
-			if origin := r.Header.Get("Origin"); origin != "" {
-				u, err := url.Parse(origin)
-				scheme := "http"
-				if r.TLS != nil {
-					scheme = "https"
-				}
-				if err != nil || u.Scheme != scheme || u.Host != r.Host || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
-					respondWallet(w, http.StatusForbidden, nil, errors.New("跨來源請求已被拒絕"))
-					return
-				}
-			}
-
-			// CSRF protection for POST requests
-			if r.Method == http.MethodPost {
-				csrf := r.Header.Get("X-Wallet-CSRF")
-				if csrf == "" || csrf != ws.CSRFToken() {
-					respondWallet(w, http.StatusForbidden, nil, errors.New("缺少或無效的 CSRF Token (X-Wallet-CSRF)"))
-					return
-				}
-			}
-
-			handler(w, r)
+	mux.HandleFunc("POST /api/wallet/exchange/pools", walletFilter(func(w http.ResponseWriter, r *http.Request) {
+		var req evmQuoteRequest
+		if err := decodeStrictJSON(w, r, &req); err != nil {
+			respondWallet(w, 400, nil, err)
+			return
 		}
-	}
-
+		ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
+		defer cancel()
+		command, err := req.poolComparisonCommand()
+		if err != nil {
+			respondWallet(w, 400, nil, err)
+			return
+		}
+		result, err := ws.ComparePoolsCommand(ctx, command)
+		if err != nil {
+			respondWallet(w, 400, nil, err)
+			return
+		}
+		respondWallet(w, 200, newEVMPoolComparison(result), nil)
+	}))
 	// GET /api/wallet and GET /api/wallet/status
 	statusHandler := walletFilter(func(w http.ResponseWriter, r *http.Request) {
 		info, err := ws.Status()
@@ -96,11 +79,84 @@ func registerWalletRoutes(mux *http.ServeMux, ws *wallet.Service) {
 			respondWallet(w, http.StatusInternalServerError, nil, err)
 			return
 		}
-		respondWallet(w, http.StatusOK, info, nil)
+		respondWallet(w, http.StatusOK, newEVMWalletInfo(info), nil)
 	})
 	mux.HandleFunc("GET /api/wallet", statusHandler)
 	mux.HandleFunc("GET /api/wallet/status", statusHandler)
 
+	mux.HandleFunc("POST /api/wallet/import-keystore", walletFilter(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Keystore    json.RawMessage `json:"keystore"`
+			Password    string          `json:"password"`
+			NewPassword string          `json:"newPassword"`
+		}
+		if err := decodeStrictJSON(w, r, &req); err != nil {
+			respondWallet(w, http.StatusBadRequest, nil, err)
+			return
+		}
+		res, err := ws.ImportKeystore(req.Keystore, req.Password, req.NewPassword)
+		if err != nil {
+			respondWallet(w, http.StatusBadRequest, nil, err)
+			return
+		}
+		respondWallet(w, http.StatusOK, newEVMImportResponse(res), nil)
+	}))
+	mux.HandleFunc("POST /api/wallet/password", walletFilter(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Password    string `json:"password"`
+			NewPassword string `json:"newPassword"`
+		}
+		if err := decodeStrictJSON(w, r, &req); err != nil {
+			respondWallet(w, http.StatusBadRequest, nil, err)
+			return
+		}
+		if err := ws.ChangePassword(req.Password, req.NewPassword); err != nil {
+			respondWallet(w, http.StatusBadRequest, nil, err)
+			return
+		}
+		respondWallet(w, http.StatusOK, &walletMutationResponse{Changed: true}, nil)
+	}))
+
+	mux.HandleFunc("GET /api/wallet/accounts", walletFilter(func(w http.ResponseWriter, r *http.Request) {
+		result, err := ws.Accounts()
+		if err != nil {
+			respondWallet(w, 400, nil, err)
+			return
+		}
+		respondWallet(w, 200, newEVMAccounts(result), nil)
+	}))
+	mux.HandleFunc("POST /api/wallet/accounts", walletFilter(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Name string `json:"name"`
+		}
+		if err := decodeStrictJSON(w, r, &req); err != nil {
+			respondWallet(w, 400, nil, err)
+			return
+		}
+		result, err := ws.AddAccount(req.Name)
+		if err != nil {
+			respondWallet(w, 400, nil, err)
+			return
+		}
+		respondWallet(w, 200, newEVMAccount(result), nil)
+	}))
+	mux.HandleFunc("POST /api/wallet/accounts/update", walletFilter(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			ID       string `json:"id"`
+			Name     string `json:"name"`
+			Archived bool   `json:"archived"`
+		}
+		if err := decodeStrictJSON(w, r, &req); err != nil {
+			respondWallet(w, 400, nil, err)
+			return
+		}
+		result, err := ws.UpdateAccount(req.ID, req.Name, req.Archived)
+		if err != nil {
+			respondWallet(w, 400, nil, err)
+			return
+		}
+		respondWallet(w, 200, newEVMAccount(result), nil)
+	}))
 	// POST /api/wallet/create
 	mux.HandleFunc("POST /api/wallet/create", walletFilter(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -121,7 +177,7 @@ func registerWalletRoutes(mux *http.ServeMux, ws *wallet.Service) {
 			respondWallet(w, status, nil, err)
 			return
 		}
-		respondWallet(w, http.StatusOK, res, nil)
+		respondWallet(w, http.StatusOK, newEVMCreateResponse(res), nil)
 	}))
 
 	// POST /api/wallet/import
@@ -145,7 +201,7 @@ func registerWalletRoutes(mux *http.ServeMux, ws *wallet.Service) {
 			respondWallet(w, status, nil, err)
 			return
 		}
-		respondWallet(w, http.StatusOK, res, nil)
+		respondWallet(w, http.StatusOK, newEVMImportResponse(res), nil)
 	}))
 
 	// POST /api/wallet/backup
@@ -179,6 +235,7 @@ func registerWalletRoutes(mux *http.ServeMux, ws *wallet.Service) {
 	mux.HandleFunc("POST /api/wallet/token", walletFilter(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Contract string `json:"contract"`
+			Spender  string `json:"spender"`
 		}
 		if err := decodeStrictJSON(w, r, &req); err != nil {
 			respondWallet(w, http.StatusBadRequest, nil, err)
@@ -186,7 +243,7 @@ func registerWalletRoutes(mux *http.ServeMux, ws *wallet.Service) {
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
-		info, err := ws.Token(ctx, req.Contract)
+		info, err := ws.Token(ctx, req.Contract, req.Spender)
 		if err != nil {
 			status := http.StatusBadRequest
 			if errors.Is(err, wallet.ErrWalletNotFound) {
@@ -199,19 +256,24 @@ func registerWalletRoutes(mux *http.ServeMux, ws *wallet.Service) {
 			respondWallet(w, status, nil, err)
 			return
 		}
-		respondWallet(w, http.StatusOK, info, nil)
+		respondWallet(w, http.StatusOK, newEVMToken(info), nil)
 	}))
 
 	// POST /api/wallet/quote
 	mux.HandleFunc("POST /api/wallet/quote", walletFilter(func(w http.ResponseWriter, r *http.Request) {
-		var req wallet.QuoteRequest
+		var req evmQuoteRequest
 		if err := decodeStrictJSON(w, r, &req); err != nil {
 			respondWallet(w, http.StatusBadRequest, nil, err)
 			return
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 40*time.Second)
 		defer cancel()
-		quote, err := ws.Quote(ctx, &req)
+		command, err := req.walletCommand()
+		if err != nil {
+			respondWallet(w, http.StatusBadRequest, nil, err)
+			return
+		}
+		quote, err := ws.QuoteCommand(ctx, command)
 		if err != nil {
 			status := http.StatusBadRequest
 			switch {
@@ -227,12 +289,15 @@ func registerWalletRoutes(mux *http.ServeMux, ws *wallet.Service) {
 			respondWallet(w, status, nil, err)
 			return
 		}
-		respondWallet(w, http.StatusOK, quote, nil)
+		respondWallet(w, http.StatusOK, newEVMQuoteResponse(quote), nil)
 	}))
 
 	// POST /api/wallet/send
 	mux.HandleFunc("POST /api/wallet/send", walletFilter(func(w http.ResponseWriter, r *http.Request) {
-		var req wallet.SendRequest
+		var req struct {
+			QuoteID  string `json:"quoteId"`
+			Password string `json:"password"`
+		}
 		if err := decodeStrictJSON(w, r, &req); err != nil {
 			respondWallet(w, http.StatusBadRequest, nil, err)
 			return
@@ -257,12 +322,14 @@ func registerWalletRoutes(mux *http.ServeMux, ws *wallet.Service) {
 			respondWallet(w, status, nil, err)
 			return
 		}
-		respondWallet(w, http.StatusOK, res, nil)
+		respondWallet(w, http.StatusOK, newEVMSendResponse(res), nil)
 	}))
 
 	// POST /api/wallet/retry
 	mux.HandleFunc("POST /api/wallet/retry", walletFilter(func(w http.ResponseWriter, r *http.Request) {
-		var req wallet.RetryRequest
+		var req struct {
+			Hash string `json:"hash"`
+		}
 		if err := decodeStrictJSON(w, r, &req); err != nil {
 			respondWallet(w, http.StatusBadRequest, nil, err)
 			return
@@ -283,7 +350,7 @@ func registerWalletRoutes(mux *http.ServeMux, ws *wallet.Service) {
 			respondWallet(w, status, nil, err)
 			return
 		}
-		respondWallet(w, http.StatusOK, res, nil)
+		respondWallet(w, http.StatusOK, newEVMSendResponse(res), nil)
 	}))
 
 	mux.HandleFunc("POST /api/wallet/activity/import", walletFilter(func(w http.ResponseWriter, r *http.Request) {
@@ -301,7 +368,7 @@ func registerWalletRoutes(mux *http.ServeMux, ws *wallet.Service) {
 			respondWallet(w, 400, nil, err)
 			return
 		}
-		respondWallet(w, 200, result, nil)
+		respondWallet(w, 200, newEVMActivity(result), nil)
 	}))
 	mux.HandleFunc("POST /api/wallet/activity/sync", walletFilter(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -319,7 +386,7 @@ func registerWalletRoutes(mux *http.ServeMux, ws *wallet.Service) {
 			respondWallet(w, 400, nil, err)
 			return
 		}
-		respondWallet(w, 200, result, nil)
+		respondWallet(w, 200, newEVMSyncResponse(result), nil)
 	}))
 	mux.HandleFunc("GET /api/wallet/activity", walletFilter(func(w http.ResponseWriter, r *http.Request) {
 		page := 1
@@ -341,12 +408,36 @@ func registerWalletRoutes(mux *http.ServeMux, ws *wallet.Service) {
 		if r.URL.Query().Get("format") == "csv" {
 			w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 			w.Header().Set("Content-Disposition", "attachment; filename=flowledger-sepolia-activity.csv")
-			_ = wallet.WriteActivityCSV(w, result)
+			_ = writeEVMActivityCSV(w, newEVMActivityResponse(result))
 			return
 		}
-		respondWallet(w, 200, result, nil)
+		respondWallet(w, 200, newEVMActivityResponse(result), nil)
 	}))
 
+	mux.HandleFunc("GET /api/wallet/scan", walletFilter(func(w http.ResponseWriter, r *http.Request) {
+		state, err := ws.ScanProgress()
+		if err != nil {
+			respondWallet(w, 400, nil, err)
+			return
+		}
+		respondWallet(w, 200, newEVMScanProgress(state), nil)
+	}))
+	mux.HandleFunc("POST /api/wallet/scan", walletFilter(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Enabled bool    `json:"enabled"`
+			Start   *uint64 `json:"start"`
+		}
+		if err := decodeStrictJSON(w, r, &req); err != nil {
+			respondWallet(w, 400, nil, err)
+			return
+		}
+		state, err := ws.ConfigureScan(req.Enabled, req.Start)
+		if err != nil {
+			respondWallet(w, 400, nil, err)
+			return
+		}
+		respondWallet(w, 200, newEVMScanProgress(state), nil)
+	}))
 	// GET /api/wallet/history
 	mux.HandleFunc("GET /api/wallet/history", walletFilter(func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
@@ -356,15 +447,14 @@ func registerWalletRoutes(mux *http.ServeMux, ws *wallet.Service) {
 			respondWallet(w, http.StatusInternalServerError, nil, err)
 			return
 		}
-		respondWallet(w, http.StatusOK, history, nil)
+		respondWallet(w, http.StatusOK, newEVMHistoryResponse(history), nil)
 	}))
 }
 
 func respondWallet(w http.ResponseWriter, status int, result any, err error) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	if err != nil {
-		var pathErr *os.PathError
-		if errors.As(err, &pathErr) {
+		if _, ok := errors.AsType[*os.PathError](err); ok {
 			err = errors.New("本機錢包儲存失敗，請檢查資料磁碟與權限")
 			status = http.StatusInternalServerError
 		}
@@ -375,5 +465,43 @@ func respondWallet(w http.ResponseWriter, status int, result any, err error) {
 	w.WriteHeader(status)
 	if result != nil {
 		_ = json.NewEncoder(w).Encode(result)
+	}
+}
+
+func localWalletFilter(csrfToken string, handler http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Host check (localhost, 127.0.0.1, [::1])
+		if !isValidHost(r.Host) {
+			respondWallet(w, http.StatusBadRequest, nil, errors.New("無效的 Host 標頭，僅允許本機存取"))
+			return
+		}
+
+		// Reject cross-origin
+		if sfs := r.Header.Get("Sec-Fetch-Site"); sfs == "cross-site" {
+			respondWallet(w, http.StatusForbidden, nil, errors.New("跨來源請求已被拒絕"))
+			return
+		}
+		if origin := r.Header.Get("Origin"); origin != "" {
+			u, err := url.Parse(origin)
+			scheme := "http"
+			if r.TLS != nil {
+				scheme = "https"
+			}
+			if err != nil || u.Scheme != scheme || u.Host != r.Host || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
+				respondWallet(w, http.StatusForbidden, nil, errors.New("跨來源請求已被拒絕"))
+				return
+			}
+		}
+
+		// CSRF protection for POST requests
+		if r.Method == http.MethodPost {
+			csrf := r.Header.Get("X-Wallet-CSRF")
+			if csrf == "" || csrf != csrfToken {
+				respondWallet(w, http.StatusForbidden, nil, errors.New("缺少或無效的 CSRF Token (X-Wallet-CSRF)"))
+				return
+			}
+		}
+
+		handler(w, r)
 	}
 }

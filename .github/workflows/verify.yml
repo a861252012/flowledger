@@ -1,0 +1,29 @@
+name: Verify
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t flowledger-test .
+      - run: docker run --rm -v "$PWD:/app:ro" -v test_modules:/go/pkg/mod flowledger-test go mod download
+      - run: mkdir -p /tmp/flowledger-results
+      - run: docker run --rm --network none -v "$PWD:/app:ro" -v test_modules:/go/pkg/mod:ro -v /tmp/flowledger-results:/results -e GOCACHE=/tmp/cache flowledger-test sh -c 'go test -race -count=1 -coverprofile=/results/coverage.out ./... && go vet ./... && test -z "$(gofmt -l cmd internal)" && go fix -diff ./... > /results/gofix.diff && test ! -s /results/gofix.diff'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: go-coverage
+          path: /tmp/flowledger-results/coverage.out
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: tests/browser/package-lock.json
+      - run: npm ci --prefix tests/browser
+      - run: cd tests/browser && npx playwright install --with-deps chromium
+      - run: npm test --prefix tests/browser

@@ -4,3 +4,28 @@
 .first-transaction{margin-bottom:24px}.first-transaction h2{font-size:1.25rem}.first-transaction-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:28px;margin:24px 0 0;padding-left:24px}.first-transaction-steps li{padding-left:4px}.first-transaction-steps li::marker{color:var(--green);font-weight:700}.first-transaction-steps h3{font-size:1rem;margin:0 0 12px}.first-transaction-steps p{font-size:.8125rem;line-height:1.8;color:var(--muted)}.faucet-links{display:flex;flex-direction:column;align-items:flex-start;gap:4px}.faucet-links a{display:inline-flex;align-items:center;min-height:44px;font-size:.8125rem;color:var(--green);text-underline-offset:4px}#funding-status{overflow-wrap:anywhere}@media(max-width:1100px){.first-transaction-steps{grid-template-columns:1fr;gap:24px}}
 
 .advanced-info{border-top:1px solid var(--border);margin-top:20px;padding-top:8px}.advanced-info summary{font-weight:600;color:var(--muted)}.advanced-info p{line-height:1.7}.advanced-info code{overflow-wrap:anywhere}
+
+.topbar label { display: flex; align-items: center; gap: 12px; white-space: nowrap; }
+.topbar select { width: auto; max-width: 230px; margin: 0; }
+.account-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; margin-bottom: 20px; }
+.account-controls label { grid-column: 1 / -1; }
+.account-controls select { margin: 0; }
+.account-controls button { align-self: center; }
+@media (max-width: 480px) { .account-controls { grid-template-columns: minmax(0, 1fr); } .topbar label { gap: 6px; } .topbar select { max-width: 180px; } }
+
+
+.contact-row { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 12px 0; border-bottom: 1px solid #e2e8f0; }
+.contact-row .mono { overflow-wrap: anywhere; }
+#watch-result, #watch-transactions, #diagnostics-result, #diagnostic-tx, #pool-results { margin: 18px 0; overflow-wrap: anywhere; }
+#watch-panel form, #contacts-panel form { max-width: 680px; }
+.lifecycle { display: flex; flex-wrap: wrap; gap: 24px; padding: 24px; background: #eff6ff; border-radius: 12px; }
+#history-search { margin-bottom: 16px; }
+#exchange-workflow { padding: 12px; background: #eff6ff; border-radius: 10px; }
+#exchange-workflow:empty { display: none; }
+@media (max-width: 600px) { .contact-row { display: block; } .contact-row button { margin: 6px 6px 0 0; } }
+.solana-main { max-width: 1080px; margin: 0 auto; padding: 24px; }
+.solana-main .panel { margin: 24px 0; }
+.solana-main textarea { width: 100%; min-height: 90px; }
+
+#sol-error:empty, #sol-sign-error:empty, #tron-error:empty, #tron-sign-error:empty { display: none; }
+.solana-main form label { display: block; margin: 14px 0 8px; }

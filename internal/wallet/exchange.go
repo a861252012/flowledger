@@ -90,19 +90,19 @@ func exchangeToken(address common.Address) (string, int, error) {
 }
 
 // PrepareExchange builds only allowlisted calls; the client never supplies arbitrary calldata or a router.
-func PrepareExchange(ctx context.Context, caller ChainCaller, owner common.Address, req *QuoteRequest) (*exchangePayload, error) {
+func PrepareExchange(ctx context.Context, caller ChainCaller, owner common.Address, command QuoteCommand) (*exchangePayload, error) {
 	weth := common.HexToAddress(WETHAddress)
 	p := &exchangePayload{TxTo: weth, Contract: weth, Value: big.NewInt(0), Symbol: "WETH", Decimals: 18}
 	preview := &ExchangePreview{Deadline: time.Now().UTC().Add(120 * time.Second).Format(time.RFC3339)}
 	p.Preview = preview
-	if req.Action == "wrap" || req.Action == "unwrap" {
-		if req.Contract != "" && !strings.EqualFold(req.Contract, WETHAddress) {
+	if command.Action == ActionWrap || command.Action == ActionUnwrap {
+		if command.Contract != "" && !strings.EqualFold(string(command.Contract), WETHAddress) {
 			return nil, errors.New("包裝與解包只能使用指定的 Sepolia WETH")
 		}
-		if req.TokenOut != "" || req.PoolFee != 0 || req.SlippageBPS != 0 {
+		if command.TokenOut != "" || command.PoolFee != 0 || command.SlippageBPS != 0 {
 			return nil, errors.New("包裝與解包不接受交易池或滑價參數")
 		}
-		amount, err := ParseUnits(req.Amount, 18)
+		amount, err := ParseUnits(command.Amount, 18)
 		if err != nil {
 			return nil, err
 		}
@@ -113,7 +113,7 @@ func PrepareExchange(ctx context.Context, caller ChainCaller, owner common.Addre
 			return nil, err
 		}
 		preview.TokenIn, preview.TokenOut, preview.SymbolOut = "ETH", weth.Hex(), "WETH"
-		if req.Action == "wrap" {
+		if command.Action == ActionWrap {
 			p.Symbol, p.Method, p.Value = "ETH", "deposit", amount
 			p.Data, err = exchangeABI.Pack("deposit")
 		} else {
@@ -132,33 +132,28 @@ func PrepareExchange(ctx context.Context, caller ChainCaller, owner common.Addre
 			return nil, err
 		}
 		preview.ExpectedOut, preview.MinimumOut, preview.MinimumOutRaw = FormatUnits(amount, 18), FormatUnits(amount, 18), amount.String()
-	} else if req.Action == "swap" {
-		in, err := ValidateAddress(req.Contract)
-		if err != nil {
-			return nil, err
-		}
-		out, err := ValidateAddress(req.TokenOut)
-		if err != nil {
-			return nil, err
-		}
+	} else if command.Action == ActionSwap {
+		in := common.HexToAddress(string(command.Contract))
+		out := common.HexToAddress(string(command.TokenOut))
 		if in == out {
 			return nil, errors.New("兌換的兩種資產不可相同")
 		}
-		p.Symbol, p.Decimals, err = exchangeToken(in)
+		symbol, decimals, err := exchangeToken(in)
 		if err != nil {
 			return nil, err
 		}
+		p.Symbol, p.Decimals = symbol, decimals
 		outSymbol, outDecimals, err := exchangeToken(out)
 		if err != nil {
 			return nil, err
 		}
-		if req.SlippageBPS < 1 || req.SlippageBPS > 500 {
+		if command.SlippageBPS < 1 || command.SlippageBPS > 500 {
 			return nil, errors.New("滑價必須介於 0.01% 至 5%")
 		}
-		if req.PoolFee != 100 && req.PoolFee != 500 && req.PoolFee != 3000 && req.PoolFee != 10000 {
+		if command.PoolFee != 100 && command.PoolFee != 500 && command.PoolFee != 3000 && command.PoolFee != 10000 {
 			return nil, errors.New("請選擇有效的 Uniswap V3 費率")
 		}
-		amount, err := ParseUnits(req.Amount, p.Decimals)
+		amount, err := ParseUnits(command.Amount, p.Decimals)
 		if err != nil {
 			return nil, err
 		}
@@ -185,37 +180,13 @@ func PrepareExchange(ctx context.Context, caller ChainCaller, owner common.Addre
 		if allowance.Cmp(amount) < 0 {
 			return nil, errors.New("請先授權 Router 本次兌換所需數量，等待授權交易成功，再重新報價")
 		}
-		fee := big.NewInt(int64(req.PoolFee))
-		poolData, err := exchangeABI.Pack("getPool", in, out, fee)
+		fee := big.NewInt(int64(command.PoolFee))
+		expected, pool, err := quotePool(ctx, caller, in, out, amount, command.PoolFee)
 		if err != nil {
 			return nil, err
 		}
-		poolRaw, err := caller.CallContract(ctx, ethereum.CallMsg{To: &factory, Data: poolData}, nil)
-		if err != nil {
-			return nil, err
-		}
-		poolValues, err := exchangeABI.Unpack("getPool", poolRaw)
-		if err != nil || len(poolValues) != 1 {
-			return nil, errors.New("無法解析交易池地址")
-		}
-		pool := poolValues[0].(common.Address)
-		if pool == (common.Address{}) {
-			return nil, errors.New("此費率沒有 WETH/USDC 交易池，請選擇其他費率")
-		}
-		quoteData, err := exchangeABI.Pack("quoteExactInputSingle", quoterParams{in, out, amount, fee, big.NewInt(0)})
-		if err != nil {
-			return nil, err
-		}
-		quoteRaw, err := caller.CallContract(ctx, ethereum.CallMsg{To: &quoter, Data: quoteData}, nil)
-		if err != nil {
-			return nil, errors.New("鏈上報價失敗；RPC 或此交易池的流動性目前無法完成兌換")
-		}
-		values, err := exchangeABI.Unpack("quoteExactInputSingle", quoteRaw)
-		if err != nil || len(values) != 4 {
-			return nil, errors.New("兌換報價格式錯誤")
-		}
-		expected := values[0].(*big.Int)
-		minimum := new(big.Int).Div(new(big.Int).Mul(expected, big.NewInt(int64(10000-req.SlippageBPS))), big.NewInt(10000))
+
+		minimum := new(big.Int).Div(new(big.Int).Mul(expected, big.NewInt(int64(10000-command.SlippageBPS))), big.NewInt(10000))
 		if minimum.Sign() <= 0 {
 			return nil, errors.New("可收到的數量太小或交易池沒有足夠流動性")
 		}
@@ -231,11 +202,11 @@ func PrepareExchange(ctx context.Context, caller ChainCaller, owner common.Addre
 		p.TxTo, p.Contract, p.Method = router, in, "multicall(deadline, exactInputSingle)"
 		preview.TokenIn, preview.TokenOut, preview.SymbolOut = in.Hex(), out.Hex(), outSymbol
 		preview.ExpectedOut, preview.MinimumOut, preview.MinimumOutRaw = FormatUnits(expected, outDecimals), FormatUnits(minimum, outDecimals), minimum.String()
-		preview.Router, preview.Pool, preview.PoolFee, preview.SlippageBPS = router.Hex(), pool.Hex(), req.PoolFee, req.SlippageBPS
+		preview.Router, preview.Pool, preview.PoolFee, preview.SlippageBPS = router.Hex(), pool.Hex(), command.PoolFee, command.SlippageBPS
 	} else {
 		return nil, errors.New("未知的兌換操作")
 	}
-	if err := simulateExchange(ctx, caller, owner, p.TxTo, p.Value, p.Data, req.Action, preview); err != nil {
+	if err := simulateExchange(ctx, caller, owner, p.TxTo, p.Value, p.Data, string(command.Action), preview); err != nil {
 		return nil, err
 	}
 	return p, nil
@@ -289,5 +260,39 @@ func RecheckExchange(ctx context.Context, caller ChainCaller, q *BoundQuote) err
 			return errors.New("兌換所需授權額度已不足")
 		}
 	}
-	return simulateExchange(ctx, caller, q.From, q.TxTo, q.TxValue, q.Data, q.Action, q.Exchange)
+	return simulateExchange(ctx, caller, q.From, q.TxTo, q.TxValue, q.Data, string(q.Action), q.Exchange)
+}
+
+func quotePool(ctx context.Context, caller ChainCaller, in, out common.Address, amount *big.Int, poolFee int) (*big.Int, common.Address, error) {
+	factory, quoter := common.HexToAddress(FactoryAddress), common.HexToAddress(QuoterAddress)
+	poolData, err := exchangeABI.Pack("getPool", in, out, big.NewInt(int64(poolFee)))
+	if err != nil {
+		return nil, common.Address{}, err
+	}
+	poolRaw, err := caller.CallContract(ctx, ethereum.CallMsg{To: &factory, Data: poolData}, nil)
+	if err != nil {
+		return nil, common.Address{}, err
+	}
+	poolValues, err := exchangeABI.Unpack("getPool", poolRaw)
+	if err != nil || len(poolValues) != 1 {
+		return nil, common.Address{}, errors.New("無法解析交易池地址")
+	}
+	pool := poolValues[0].(common.Address)
+	if pool == (common.Address{}) {
+		return nil, common.Address{}, errors.New("此費率沒有 WETH/USDC 交易池，請選擇其他費率")
+	}
+	quoteData, err := exchangeABI.Pack("quoteExactInputSingle", quoterParams{in, out, amount, big.NewInt(int64(poolFee)), big.NewInt(0)})
+	if err != nil {
+		return nil, common.Address{}, err
+	}
+	quoteRaw, err := caller.CallContract(ctx, ethereum.CallMsg{To: &quoter, Data: quoteData}, nil)
+	if err != nil {
+		return nil, common.Address{}, errors.New("鏈上報價失敗；RPC 或此交易池的流動性目前無法完成兌換")
+	}
+	values, err := exchangeABI.Unpack("quoteExactInputSingle", quoteRaw)
+	if err != nil || len(values) != 4 {
+		return nil, common.Address{}, errors.New("兌換報價格式錯誤")
+	}
+	expected := values[0].(*big.Int)
+	return expected, pool, nil
 }

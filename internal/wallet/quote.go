@@ -16,8 +16,12 @@ import (
 )
 
 type BoundQuote struct {
-	ID                   string
-	Action               string
+	RollupFeeWei         *big.Int
+	ReplacementERC20     bool
+	ReplacementCount     int
+	ReplacementHash      TransactionHash
+	ID                   QuoteID
+	Action               TransactionAction
 	From                 common.Address
 	To                   common.Address // Real recipient or spender
 	TxTo                 common.Address // Transaction target (recipient for ETH, contract for token)
@@ -43,12 +47,12 @@ type BoundQuote struct {
 
 type QuoteStore struct {
 	mu     sync.Mutex
-	quotes map[string]*BoundQuote
+	quotes map[QuoteID]*BoundQuote
 }
 
 func NewQuoteStore() *QuoteStore {
 	return &QuoteStore{
-		quotes: make(map[string]*BoundQuote),
+		quotes: make(map[QuoteID]*BoundQuote),
 	}
 }
 
@@ -61,6 +65,12 @@ func (qs *QuoteStore) cleanupExpiredLocked(now time.Time) {
 }
 
 func (qs *QuoteStore) Add(q *BoundQuote) error {
+	if q == nil {
+		return ErrQuoteNotFound
+	}
+	if _, err := ParseQuoteID(string(q.ID)); err != nil {
+		return err
+	}
 	qs.mu.Lock()
 	defer qs.mu.Unlock()
 
@@ -75,24 +85,28 @@ func (qs *QuoteStore) Add(q *BoundQuote) error {
 }
 
 func (qs *QuoteStore) Get(id string) (*BoundQuote, error) {
+	quoteID, err := ParseQuoteID(id)
+	if err != nil {
+		return nil, ErrQuoteNotFound
+	}
 	qs.mu.Lock()
 	defer qs.mu.Unlock()
 
 	now := time.Now().UTC()
 	qs.cleanupExpiredLocked(now)
 
-	q, ok := qs.quotes[id]
+	q, ok := qs.quotes[quoteID]
 	if !ok {
 		return nil, ErrQuoteNotFound
 	}
 	if now.After(q.ExpiresAt) {
-		delete(qs.quotes, id)
+		delete(qs.quotes, quoteID)
 		return nil, ErrQuoteExpired
 	}
 	return q, nil
 }
 
-func (qs *QuoteStore) Remove(id string) {
+func (qs *QuoteStore) Remove(id QuoteID) {
 	qs.mu.Lock()
 	defer qs.mu.Unlock()
 	delete(qs.quotes, id)
@@ -101,6 +115,7 @@ func (qs *QuoteStore) Remove(id string) {
 // ChainQuoteProvider defines RPC operations needed to generate a bound quote.
 type ChainQuoteProvider interface {
 	ChainCaller
+	ChainID() int64
 	HeaderByNumber(ctx context.Context, number *big.Int) (*types.Header, error)
 	SuggestGasTipCap(ctx context.Context) (*big.Int, error)
 	EstimateGas(ctx context.Context, msg ethereum.CallMsg) (uint64, error)
@@ -109,12 +124,10 @@ type ChainQuoteProvider interface {
 }
 
 // CreateQuote builds and validates a server-bound fee quote.
-func CreateQuote(ctx context.Context, provider ChainQuoteProvider, from common.Address, req *QuoteRequest) (*BoundQuote, error) {
-	// Validate recipient/spender address
-	targetAddr, err := ValidateAddress(req.To)
-	if err != nil {
-		return nil, err
-	}
+func CreateQuote(ctx context.Context, provider ChainQuoteProvider, from common.Address, command QuoteCommand) (*BoundQuote, error) {
+	action := command.Action
+	// The command has already crossed the validated request boundary.
+	targetAddr := common.HexToAddress(string(command.To))
 
 	var (
 		contractAddr common.Address
@@ -125,23 +138,25 @@ func CreateQuote(ctx context.Context, provider ChainQuoteProvider, from common.A
 		calldata     []byte
 		methodName   string
 		exchange     *ExchangePreview
+		amountRaw    *big.Int
+		amount       = command.Amount
 	)
 
-	switch req.Action {
-	case "wrap", "unwrap", "swap":
+	switch action {
+	case ActionWrap, ActionUnwrap, ActionSwap:
 		if targetAddr != from {
 			return nil, errors.New("兌換資產只能回到自己的錢包")
 		}
-		prepared, err := PrepareExchange(ctx, provider, from, req)
+		prepared, err := PrepareExchange(ctx, provider, from, command)
 		if err != nil {
 			return nil, err
 		}
 		txTo, txValue, calldata, methodName = prepared.TxTo, prepared.Value, prepared.Data, prepared.Method
 		contractAddr, symbol, decimals, exchange = prepared.Contract, prepared.Symbol, prepared.Decimals, prepared.Preview
 
-	case "eth":
+	case ActionETH:
 		txTo = targetAddr
-		parsedAmount, err := ParseUnits(req.Amount, 18)
+		parsedAmount, err := ParseUnits(command.Amount, 18)
 		if err != nil {
 			return nil, err
 		}
@@ -149,18 +164,15 @@ func CreateQuote(ctx context.Context, provider ChainQuoteProvider, from common.A
 			return nil, errors.New("轉帳金額必須大於 0")
 		}
 		txValue = parsedAmount
+		amountRaw = parsedAmount
 		calldata = []byte{}
 		methodName = "ETH transfer"
 
-	case "transfer":
-		if req.Contract == "" {
+	case ActionTransfer:
+		if command.Contract == "" {
 			return nil, errors.New("代幣轉帳必須指定 contract 合約地址")
 		}
-		cAddr, err := ValidateAddress(req.Contract)
-		if err != nil {
-			return nil, err
-		}
-		contractAddr = cAddr
+		contractAddr = common.HexToAddress(string(command.Contract))
 		txTo = contractAddr
 		txValue = big.NewInt(0)
 
@@ -168,16 +180,27 @@ func CreateQuote(ctx context.Context, provider ChainQuoteProvider, from common.A
 		if err != nil {
 			return nil, err
 		}
-		symbol = sym
-		decimals = dec
-
-		parsedAmount, err := ParseUnits(req.Amount, decimals)
+		symbol, decimals = sym, dec
+		trustedSymbol, trustedDecimals, trusted := trustedEVMToken(provider.ChainID(), contractAddr)
+		var parsedAmount *big.Int
+		if trusted {
+			if sym != trustedSymbol || dec != trustedDecimals {
+				return nil, errors.New("RPC 回傳的代幣資料與內建登錄不符")
+			}
+			parsedAmount, err = ParseUnits(command.Amount, trustedDecimals)
+		} else {
+			parsedAmount, err = ParseRawTokenAmount(command.AmountRaw)
+			if err == nil {
+				amount = FormatUnits(parsedAmount, decimals)
+			}
+		}
 		if err != nil {
 			return nil, err
 		}
 		if parsedAmount.Sign() <= 0 {
 			return nil, errors.New("轉帳代幣數量必須大於 0")
 		}
+		amountRaw = parsedAmount
 
 		// Check sender token balance
 		bal, err := QueryERC20BalanceOf(ctx, provider, contractAddr, from)
@@ -205,15 +228,11 @@ func CreateQuote(ctx context.Context, provider ChainQuoteProvider, from common.A
 			return nil, err
 		}
 
-	case "approve":
-		if req.Contract == "" {
+	case ActionApprove:
+		if command.Contract == "" {
 			return nil, errors.New("代幣授權必須指定 contract 合約地址")
 		}
-		cAddr, err := ValidateAddress(req.Contract)
-		if err != nil {
-			return nil, err
-		}
-		contractAddr = cAddr
+		contractAddr = common.HexToAddress(string(command.Contract))
 		txTo = contractAddr
 		txValue = big.NewInt(0)
 
@@ -221,10 +240,20 @@ func CreateQuote(ctx context.Context, provider ChainQuoteProvider, from common.A
 		if err != nil {
 			return nil, err
 		}
-		symbol = sym
-		decimals = dec
-
-		parsedAmount, err := ParseUnits(req.Amount, decimals)
+		symbol, decimals = sym, dec
+		trustedSymbol, trustedDecimals, trusted := trustedEVMToken(provider.ChainID(), contractAddr)
+		var parsedAmount *big.Int
+		if trusted {
+			if sym != trustedSymbol || dec != trustedDecimals {
+				return nil, errors.New("RPC 回傳的代幣資料與內建登錄不符")
+			}
+			parsedAmount, err = ParseUnits(command.Amount, trustedDecimals)
+		} else {
+			parsedAmount, err = ParseRawTokenAmount(command.AmountRaw)
+			if err == nil {
+				amount = FormatUnits(parsedAmount, decimals)
+			}
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -234,6 +263,7 @@ func CreateQuote(ctx context.Context, provider ChainQuoteProvider, from common.A
 		if parsedAmount.Sign() < 0 {
 			return nil, errors.New("授權數量不可為負數")
 		}
+		amountRaw = parsedAmount
 
 		// Enforce revoke-to-zero before nonzero->nonzero approval to prevent race condition
 		currentAllowance, err := QueryERC20Allowance(ctx, provider, contractAddr, from, targetAddr)
@@ -309,10 +339,7 @@ func CreateQuote(ctx context.Context, provider ChainQuoteProvider, from common.A
 	if est < 21000 || est > head.GasLimit || est > ^uint64(0)/6*5 {
 		return nil, errors.New("Gas 預估值無效")
 	}
-	gasLimit := est + est/5
-	if gasLimit > head.GasLimit {
-		gasLimit = head.GasLimit
-	}
+	gasLimit := min(est+est/5, head.GasLimit)
 	// Nonce
 	nonce, err := provider.PendingNonceAt(ctx, from)
 	if err != nil {
@@ -337,7 +364,7 @@ func CreateQuote(ctx context.Context, provider ChainQuoteProvider, from common.A
 	if _, err := rand.Read(idBytes); err != nil {
 		return nil, err
 	}
-	quoteID := hex.EncodeToString(idBytes)
+	quoteID := QuoteID(hex.EncodeToString(idBytes))
 
 	now := time.Now().UTC()
 	expiresAt := now.Add(120 * time.Second)
@@ -345,22 +372,21 @@ func CreateQuote(ctx context.Context, provider ChainQuoteProvider, from common.A
 		expiresAt, _ = time.Parse(time.RFC3339, exchange.Deadline)
 	}
 
-	rawAmount := txValue
-	if req.Action != "eth" {
-		rawAmount, _ = ParseUnits(req.Amount, decimals)
+	if amountRaw == nil {
+		amountRaw, _ = ParseUnits(command.Amount, decimals)
 	}
 
 	return &BoundQuote{
 		ID:                   quoteID,
-		Action:               req.Action,
+		Action:               action,
 		From:                 from,
 		To:                   targetAddr,
 		TxTo:                 txTo,
 		Contract:             contractAddr,
 		Symbol:               symbol,
 		Decimals:             decimals,
-		Amount:               req.Amount,
-		AmountRaw:            rawAmount,
+		Amount:               amount,
+		AmountRaw:            amountRaw,
 		TxValue:              txValue,
 		Nonce:                nonce,
 		GasLimit:             gasLimit,
@@ -388,9 +414,14 @@ func (q *BoundQuote) ToResponse() *QuoteResponse {
 		dataStr = hexutil.Encode(q.Data)
 	}
 
+	rollup := ""
+	if q.RollupFeeWei != nil {
+		rollup = FormatUnits(q.RollupFeeWei, 18)
+	}
 	return &QuoteResponse{
-		ID:                   q.ID,
-		Action:               q.Action,
+		RollupFeeETH:         rollup,
+		ID:                   string(q.ID),
+		Action:               string(q.Action),
 		From:                 q.From.Hex(),
 		To:                   q.To.Hex(),
 		Contract:             contractStr,
