@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -20,6 +21,8 @@ import (
 	"github.com/a861252012/testnet-wallet-lab/internal/web"
 )
 
+var version = "dev"
+
 func main() {
 	if err := run(); err != nil {
 		slog.Error(err.Error())
@@ -28,6 +31,28 @@ func main() {
 }
 
 func run() error {
+	if len(os.Args) == 2 {
+		switch os.Args[1] {
+		case "--version":
+			fmt.Println(version)
+			return nil
+		case "--healthcheck":
+			port := os.Getenv("PORT")
+			if port == "" {
+				port = strconv.Itoa(defaultHTTPPort)
+			}
+			client := &http.Client{Timeout: 3 * time.Second}
+			response, err := client.Get("http://127.0.0.1:" + port + "/healthz")
+			if err != nil {
+				return errors.New("health check connection failed")
+			}
+			defer response.Body.Close()
+			if response.StatusCode != http.StatusOK {
+				return errors.New("health check failed")
+			}
+			return nil
+		}
+	}
 	config, err := loadConfig(os.Getenv)
 	if err != nil {
 		return err
@@ -246,7 +271,7 @@ func run() error {
 		accountHandler.ServeHTTP(w, r)
 	})
 	server := &http.Server{
-		Addr: net.JoinHostPort(config.httpHost, strconv.Itoa(config.httpPort)), Handler: web.LimitTraffic(web.RequireAccessToken(workspace, config.accessToken)),
+		Addr: net.JoinHostPort(config.httpHost, strconv.Itoa(config.httpPort)), Handler: web.WithPublicOrigin(web.RequireAccessToken(workspace, config.accessToken), config.publicOrigin),
 		MaxHeaderBytes:    32 * 1024,
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second,
 		WriteTimeout: 60 * time.Second, IdleTimeout: 60 * time.Second,

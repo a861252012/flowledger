@@ -33,3 +33,7 @@ EVM 收據是否成功、所在區塊是否仍在主鏈，以及是否 finalized
 ## 智慧合約錢包實驗
 
 已在 Ethereum Sepolia 完成帳戶部署與轉帳測試，目前僅支援命令列操作。
+
+## 公開唯讀 Demo 部署
+
+[部署與驗證說明](docs/deployment.md)包含 VM、免費 Cloudflare Tunnel、管理者限定的錢包操作與 main 自動部署設定。訪客免登入查詢公開鏈上資料；VM 主動拉取驗證後映像，不需要 CI SSH 憑證。完成雲端設定與驗證前，遠端部署仍停用。

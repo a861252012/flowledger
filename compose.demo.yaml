@@ -1,0 +1,36 @@
+name: testnet-wallet-demo
+services:
+  app:
+    image: ${APP_IMAGE:?Set immutable APP_IMAGE digest}
+    init: true
+    restart: unless-stopped
+    user: "10001:10001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 640m
+    memswap_limit: 640m
+    cpus: 1.0
+    stop_grace_period: 45s
+    environment:
+      HTTP_HOST: 0.0.0.0
+      PORT: "8090"
+      GOMEMLIMIT: 480MiB
+      WALLET_DIR: /data/wallet
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?Set HTTPS PUBLIC_ORIGIN}
+      WALLET_ACCESS_TOKEN: ${WALLET_ACCESS_TOKEN:?Set WALLET_ACCESS_TOKEN}
+      SEPOLIA_RPC_URL: ${SEPOLIA_RPC_URL:-https://ethereum-sepolia-rpc.publicnode.com}
+    ports:
+      - "127.0.0.1:8090:8090"
+    volumes:
+      - type: bind
+        source: ./wallet
+        target: /data/wallet
+        bind:
+          create_host_path: false
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

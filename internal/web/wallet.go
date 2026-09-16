@@ -8,7 +8,6 @@ import (
 	"mime"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -470,8 +469,7 @@ func respondWallet(w http.ResponseWriter, status int, result any, err error) {
 
 func localWalletFilter(csrfToken string, handler http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Host check (localhost, 127.0.0.1, [::1])
-		if !isValidHost(r.Host) {
+		if !allowedRequestHost(r) {
 			respondWallet(w, http.StatusBadRequest, nil, errors.New("無效的 Host 標頭，僅允許本機存取"))
 			return
 		}
@@ -482,12 +480,7 @@ func localWalletFilter(csrfToken string, handler http.HandlerFunc) http.HandlerF
 			return
 		}
 		if origin := r.Header.Get("Origin"); origin != "" {
-			u, err := url.Parse(origin)
-			scheme := "http"
-			if r.TLS != nil {
-				scheme = "https"
-			}
-			if err != nil || u.Scheme != scheme || u.Host != r.Host || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
+			if origin != requestOrigin(r) {
 				respondWallet(w, http.StatusForbidden, nil, errors.New("跨來源請求已被拒絕"))
 				return
 			}

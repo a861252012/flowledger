@@ -33,3 +33,7 @@ EVM receipt success, canonical block inclusion and finality are checked separate
 ## Smart contract wallet experiment
 
 Account deployment and a transfer have been tested on Ethereum Sepolia. This experiment currently runs from the command line only.
+
+## Public read-only demo deployment
+
+See [deployment setup and verification](docs/deployment.md) for the VM, free Cloudflare Tunnel, owner-only wallet operations, and main-branch CI/CD. Visitors can query public chain data without login. The VM pulls verified images without CI SSH credentials. Deployment remains disabled until cloud setup and verification are complete.

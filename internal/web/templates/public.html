@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="zh-TW">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Ted Lin · Testnet Wallet Lab</title><link rel="stylesheet" href="/static/app.css"><link rel="stylesheet" href="/static/wallet.css"><link rel="stylesheet" href="/static/public.css"><script defer src="/static/public.js"></script></head>
+<body><main class="solana-main">
+<header class="topbar"><strong>Ted Lin · Testnet Wallet Lab</strong><a href="https://github.com/a861252012/testnet-wallet-lab" target="_blank" rel="noopener noreferrer">GitHub ↗</a><a href="/login">管理者登入</a></header>
+<section class="wallet-intro"><div><p class="eyebrow">GO · TESTNET · TRANSACTION RECOVERY</p><h1>從交易意圖，到鏈上收據。</h1><p>公開查詢不需登入，也不需提供助記詞或私鑰。建立錢包、簽名及轉帳由管理者登入後操作。</p></div></section>
+<section class="panel"><h2>測試網即時查詢</h2>
+<form id="public-query"><label for="network">網路</label><select id="network"><option value="">Ethereum Sepolia</option><option value="/net/arbitrum">Arbitrum Sepolia</option><option value="/net/base">Base Sepolia</option><option value="/net/optimism">OP Sepolia</option><option value="/net/polygon">Polygon Amoy</option></select>
+<label for="query-kind">查詢項目</label><select id="query-kind"><option value="network">網路狀態</option><option value="balance">地址餘額</option><option value="transaction">交易收據</option></select>
+<label for="query-value">地址或交易 Hash（查詢網路狀態時可留空）</label><input id="query-value" maxlength="66" autocomplete="off" spellcheck="false"><button type="submit">查詢</button></form>
+<p>僅查詢測試網公開資料；RPC 暫時不可用或流量達上限時會停止查詢，不自動啟用付費服務。</p><pre id="query-result" role="status" aria-live="polite">選擇查詢項目後按「查詢」。</pre></section>
+<section class="panel"><h2>可深入討論的設計</h2><ul><li>簽名先保存再廣播，逾時不當作未送出。</li><li>區分廣播、收據成功、確認數與 finalized。</li><li>交易替換、鏈重組與程序中止後恢復。</li></ul><p>此站為測試網作品展示，不提供真實資產保管服務。功能與驗證範圍以 GitHub 文件為準。</p></section>
+</main></body></html>

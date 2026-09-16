@@ -1,9 +1,11 @@
 package web
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -82,5 +84,28 @@ func TestTrafficConcurrencyRejectsBeforeHandlerAndReleasesSlots(t *testing.T) {
 				t.Fatalf("slot leaked: %d", w.Code)
 			}
 		})
+	}
+}
+
+func TestTrafficBoundsBodyAndDeadline(t *testing.T) {
+	h := LimitTraffic(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		deadline, ok := r.Context().Deadline()
+		if !ok || time.Until(deadline) > 45*time.Second {
+			t.Error("missing bounded deadline")
+		}
+		if _, err := io.ReadAll(r.Body); err != nil {
+			w.WriteHeader(413)
+			return
+		}
+		w.WriteHeader(204)
+	}))
+	for _, length := range []int64{16385, -1} {
+		r := httptest.NewRequest("POST", "/api/wallet/import", strings.NewReader(strings.Repeat("x", 16385)))
+		r.ContentLength = length
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != 413 {
+			t.Fatal("unbounded body", length, w.Code)
+		}
 	}
 }

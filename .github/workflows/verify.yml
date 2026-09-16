@@ -5,21 +5,23 @@ permissions:
 jobs:
   go:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: docker build -t flowledger-test .
       - run: docker run --rm -v "$PWD:/app:ro" -v test_modules:/go/pkg/mod flowledger-test go mod download
       - run: mkdir -p /tmp/flowledger-results
       - run: docker run --rm --network none -v "$PWD:/app:ro" -v test_modules:/go/pkg/mod:ro -v /tmp/flowledger-results:/results -e GOCACHE=/tmp/cache flowledger-test sh -c 'go test -race -count=1 -coverprofile=/results/coverage.out ./... && go vet ./... && test -z "$(gofmt -l cmd internal)" && go fix -diff ./... > /results/gofix.diff && test ! -s /results/gofix.diff'
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: go-coverage
           path: /tmp/flowledger-results/coverage.out
   browser:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
           cache: npm
@@ -27,3 +29,55 @@ jobs:
       - run: npm ci --prefix tests/browser
       - run: cd tests/browser && npx playwright install --with-deps chromium
       - run: npm test --prefix tests/browser
+  deployment:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: python3 -m unittest discover -s tests/deployment -p 'test_*.py'
+      - run: docker build -f Dockerfile.deploy --build-arg APP_VERSION="$GITHUB_SHA" -t wallet-smoke .
+      - run: python3 tests/deployment/smoke.py wallet-smoke "$GITHUB_SHA"
+  publish:
+    needs: [go, browser, deployment, vulnerabilities]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DEMO_DEPLOY_ENABLED == 'true'
+    runs-on: ${{ vars.DEMO_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Build and test exact release image
+        run: |
+          docker build -f Dockerfile.deploy --build-arg APP_VERSION="$GITHUB_SHA" -t "ghcr.io/a861252012/testnet-wallet-lab:sha-$GITHUB_SHA" .
+          python3 tests/deployment/smoke.py "ghcr.io/a861252012/testnet-wallet-lab:sha-$GITHUB_SHA" "$GITHUB_SHA"
+      - name: Publish immutable image
+        id: push
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          image="ghcr.io/a861252012/testnet-wallet-lab:sha-$GITHUB_SHA"
+          docker push "$image"
+          ref=$(docker image inspect --format '{{index .RepoDigests 0}}' "$image")
+          digest=${ref#*@}
+          [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+          printf 'digest=%s\n' "$digest" >> "$GITHUB_OUTPUT"
+      - if: always()
+        run: docker logout ghcr.io
+  vulnerabilities:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Check reachable known Go vulnerabilities
+        run: |
+          docker run --rm -v "$PWD:/src:ro" -w /src \
+            golang:1.26-alpine@sha256:ce864e7223ac17b1775e6fd0b4c0db580c2eb50e7953a427916379e4b92a1628 \
+            sh -c 'go install golang.org/x/vuln/cmd/govulncheck@v1.8.0 && govulncheck ./cmd/... ./internal/...'

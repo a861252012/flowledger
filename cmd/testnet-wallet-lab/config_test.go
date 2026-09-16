@@ -129,3 +129,31 @@ func TestReadFaucetConfigValidatesPrivateFileBoundary(t *testing.T) {
 		t.Fatal("content error leaked filesystem detail")
 	}
 }
+
+func TestPublicDeploymentConfig(t *testing.T) {
+	for _, origin := range []string{"https://wallet.example", "https://wallet.example:8443"} {
+		c, err := loadConfig(func(key string) string {
+			return map[string]string{"PUBLIC_ORIGIN": origin, "WALLET_ACCESS_TOKEN": strings.Repeat("a", 32)}[key]
+		})
+		if err != nil || c.publicOrigin != origin {
+			t.Fatalf("valid origin %q: %v", origin, err)
+		}
+	}
+	for _, origin := range []string{"http://wallet.example", "https://", "https://user:pass@wallet.example", "https://wallet.example/", "https://wallet.example?", "https://wallet.example#", "https://wallet.example/path", "https://wallet.example?x=y", "https://wallet.example#x"} {
+		_, err := loadConfig(func(key string) string {
+			return map[string]string{"PUBLIC_ORIGIN": origin, "WALLET_ACCESS_TOKEN": strings.Repeat("a", 32)}[key]
+		})
+		if err == nil {
+			t.Fatalf("unsafe origin accepted: %q", origin)
+		}
+	}
+	_, err := loadConfig(func(key string) string {
+		if key == "PUBLIC_ORIGIN" {
+			return "https://wallet.example"
+		}
+		return ""
+	})
+	if err == nil {
+		t.Fatal("public deployment without token accepted")
+	}
+}

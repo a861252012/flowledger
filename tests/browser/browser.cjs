@@ -26,6 +26,7 @@ const server = http.createServer(async (req,res)=>{
   res.setHeader('Content-Type','application/json');
   let body='';for await(const chunk of req)body+=chunk;body=body?JSON.parse(body):{};
   const respond = data => res.end(JSON.stringify(data));
+  if(pathname==='/public-demo'){res.setHeader('Content-Type','text/html');return res.end(await fs.readFile(path.join(root,'internal/web/templates/public.html')));}
   if(pathname==='/showcase'){res.setHeader('Content-Type','text/html');return res.end(await fs.readFile(path.join(root,'internal/web/templates/showcase.html')));}
   if(pathname==='/tron/'){res.setHeader('Content-Type','text/html');return res.end(await fs.readFile(path.join(root,'internal/web/templates/tron.html')));}
   if(pathname==='/tron/api/status')return respond({exists:tronExists,address:tronAddress,csrfToken:'fixture'});
@@ -98,6 +99,21 @@ const server = http.createServer(async (req,res)=>{
  const page=await context.newPage(), errors=[];page.on('pageerror',error=>errors.push(String(error)));
  async function view(id){await page.evaluate(id=>{location.hash=id;},id);await page.waitForFunction(id=>document.body.dataset.view===id,id);}
  try {
+  await page.goto(base+'/public-demo');
+  assert.equal(await page.locator('a[href="/login"]').count(),1);
+  await page.locator('#public-query button').click();
+  await page.waitForFunction(()=>document.getElementById('query-result').textContent.includes('11155111'));
+  await page.locator('#query-kind').selectOption('balance');
+  await page.locator('#query-value').fill('<img src=x onerror=alert(1)>');
+  await page.locator('#public-query button').click();
+  assert.match(await page.locator('#query-result').textContent(),/有效/);
+  await page.locator('#query-value').fill(address);
+  await page.locator('#public-query button').click();
+  await page.waitForFunction(()=>!document.querySelector('#public-query button').disabled);
+  await page.setViewportSize({width:375,height:812});
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'public demo fits mobile');
+  await page.setViewportSize({width:1280,height:900});
+  console.log('PASS: public query page, validation, owner login link, mobile layout (mock APIs).');
   for(const [slug,id] of Object.entries(networks)){
    await page.goto(base+'/net/'+slug+'/');await page.locator('#wallet-dashboard').waitFor({state:'visible'});
    assert.equal(await page.locator('#network-select').inputValue(),'/net/'+slug);

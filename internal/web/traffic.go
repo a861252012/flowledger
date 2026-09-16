@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"sync"
@@ -19,6 +20,14 @@ func LimitTraffic(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		if r.ContentLength > 16*1024 {
+			http.Error(w, "請求內容過大", http.StatusRequestEntityTooLarge)
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, 16*1024)
+		ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
+		defer cancel()
+		r = r.WithContext(ctx)
 		mu.Lock()
 		if time.Since(window) >= time.Minute {
 			window, requests = time.Now(), 0

@@ -1,0 +1,11 @@
+[Unit]
+Description=Check wallet demo release every two minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=120s
+AccuracySec=10s
+Unit=wallet-demo-update.service
+
+[Install]
+WantedBy=timers.target
