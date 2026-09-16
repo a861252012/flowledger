@@ -157,3 +157,19 @@ func TestPublicDeploymentConfig(t *testing.T) {
 		t.Fatal("public deployment without token accepted")
 	}
 }
+
+func TestSharedDemoRequiresExplicitHTTPSOrigin(t *testing.T) {
+	for _, values := range []map[string]string{
+		{"SHARED_DEMO": "true"}, {"SHARED_DEMO": "yes", "PUBLIC_ORIGIN": "https://wallet.example"},
+	} {
+		if _, err := loadConfig(func(key string) string { return values[key] }); err == nil {
+			t.Fatal("unsafe shared configuration accepted")
+		}
+	}
+	config, err := loadConfig(func(key string) string {
+		return map[string]string{"SHARED_DEMO": "true", "PUBLIC_ORIGIN": "https://wallet.example"}[key]
+	})
+	if err != nil || !config.sharedDemo {
+		t.Fatalf("explicit shared mode rejected: %v", err)
+	}
+}

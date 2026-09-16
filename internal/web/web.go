@@ -40,7 +40,7 @@ func New(client *chain.Client, walletService ...*wallet.Service) (http.Handler, 
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(static)))
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_ = page.Execute(w, map[string]string{"Native": client.NativeSymbol()})
+		_ = page.Execute(w, map[string]any{"Native": client.NativeSymbol(), "Shared": r.Context().Value(sharedDemoKey{}) == true})
 	})
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		respond(w, map[string]string{"status": "ok", "mode": "wallet"}, nil)

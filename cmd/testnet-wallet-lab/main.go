@@ -67,6 +67,15 @@ func run() error {
 		return err
 	}
 	defer walletService.Close()
+	if config.sharedDemo {
+		info, err := walletService.Status()
+		if err != nil {
+			return err
+		}
+		if !info.Exists {
+			return errors.New("共用 Demo 必須先建立測試錢包")
+		}
+	}
 	handler, err := web.New(client, walletService)
 	if err != nil {
 		return err
@@ -270,8 +279,12 @@ func run() error {
 		accountsMu.Unlock()
 		accountHandler.ServeHTTP(w, r)
 	})
+	var accessHandler http.Handler = web.RequireAccessToken(workspace, config.accessToken)
+	if config.sharedDemo {
+		accessHandler = web.SharedDemo(workspace)
+	}
 	server := &http.Server{
-		Addr: net.JoinHostPort(config.httpHost, strconv.Itoa(config.httpPort)), Handler: web.WithPublicOrigin(web.RequireAccessToken(workspace, config.accessToken), config.publicOrigin),
+		Addr: net.JoinHostPort(config.httpHost, strconv.Itoa(config.httpPort)), Handler: web.WithPublicOrigin(accessHandler, config.publicOrigin),
 		MaxHeaderBytes:    32 * 1024,
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second,
 		WriteTimeout: 60 * time.Second, IdleTimeout: 60 * time.Second,

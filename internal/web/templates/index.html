@@ -11,7 +11,7 @@
 <script defer="" src="/static/app.js"></script>
 {{if .Public}}<script defer src="/static/public.js"></script>{{else}}<script defer="" src="/static/faucet.js"></script><script defer="" src="/static/wallet.js"></script>
 <script defer="" src="/static/workspace.js"></script>{{end}}
-<link href="/static/portal.css" rel="stylesheet"/><script defer="True" src="/static/messages.js"></script><script defer="True" src="/static/i18n.js"></script><script defer="True" src="/static/portal.js"></script></head>
+<link href="/static/portal.css" rel="stylesheet"/><script defer="True" src="/static/messages.js"></script><script defer="True" src="/static/i18n.js"></script><script defer="True" src="/static/portal.js"></script>{{if .Shared}}<script defer src="/static/shared.js"></script>{{end}}</head>
 <body data-wallet-family="evm"{{if .Public}} data-public="true"{{end}}>
 <a class="skip-link" href="#overview">跳至主要內容</a>
 <svg aria-hidden="true" class="icon-defs" xmlns="http://www.w3.org/2000/svg"><defs>

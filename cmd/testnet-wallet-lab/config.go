@@ -47,6 +47,7 @@ type runtimeConfig struct {
 	httpPort       int
 	accessToken    string
 	publicOrigin   string
+	sharedDemo     bool
 	walletDir      string
 	networks       []networkRuntimeConfig
 	solanaRPC      string
@@ -73,12 +74,19 @@ func loadConfig(getenv func(string) string) (runtimeConfig, error) {
 		return runtimeConfig{}, errors.New("若設定 WALLET_ACCESS_TOKEN，必須至少 32 字元")
 	}
 	publicOrigin := getenv("PUBLIC_ORIGIN")
+	sharedDemo := getenv("SHARED_DEMO") == "true"
+	if value := getenv("SHARED_DEMO"); value != "" && value != "true" && value != "false" {
+		return runtimeConfig{}, errors.New("SHARED_DEMO 必須是 true 或 false")
+	}
+	if sharedDemo && publicOrigin == "" {
+		return runtimeConfig{}, errors.New("SHARED_DEMO 必須搭配 PUBLIC_ORIGIN")
+	}
 	if publicOrigin != "" {
 		u, err := url.Parse(publicOrigin)
 		if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.Contains(publicOrigin, "#") || u.Opaque != "" {
 			return runtimeConfig{}, errors.New("PUBLIC_ORIGIN 必須是 HTTPS origin，不含路徑、帳密、query 或 fragment")
 		}
-		if len(accessToken) < 32 {
+		if !sharedDemo && len(accessToken) < 32 {
 			return runtimeConfig{}, errors.New("公開部署必須設定至少 32 字元的 WALLET_ACCESS_TOKEN")
 		}
 	}
@@ -90,6 +98,7 @@ func loadConfig(getenv func(string) string) (runtimeConfig, error) {
 		httpPort:       port,
 		accessToken:    accessToken,
 		publicOrigin:   publicOrigin,
+		sharedDemo:     sharedDemo,
 		walletDir:      cmp.Or(getenv("WALLET_DIR"), defaultWalletDir),
 		solanaRPC:      cmp.Or(getenv("SOLANA_DEVNET_RPC_URL"), defaultSolanaRPC),
 		tronRPC:        cmp.Or(getenv("TRON_SHASTA_RPC_URL"), defaultTronRPC),

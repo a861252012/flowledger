@@ -44,7 +44,7 @@ const server = http.createServer(async (req,res)=>{
   if(pathname==='/solana/api/quote')return respond({...body,id:'sol-quote',feeSol:'0.000005',lastValidBlockHeight:200,expiresAt:new Date(Date.now()+60000).toISOString()});
   if(pathname==='/solana/api/send'){solSends += 1;solHistory=[{signature:'1'.repeat(88),to:solAddress,amount:'0.000001',state:'finalized',finalized:true}];return respond(solHistory[0]);}
   if(url.pathname.startsWith('/static/')){res.setHeader('Content-Type',url.pathname.endsWith('.css')?'text/css':'text/javascript');return res.end(await fs.readFile(path.join(root,'internal/web',url.pathname)));}
-  if(pathname==='/' || pathname==='' || pathname==='/public-demo'){res.setHeader('Content-Type','text/html');return res.end((await fs.readFile(path.join(root,'internal/web/templates/index.html'),'utf8')).replace(/{{if \.Public}}([\s\S]*?){{else}}([\s\S]*?){{end}}/g,(_,yes,no)=>pathname==='/public-demo'?yes:no).replace(/{{if \.Public}}([\s\S]*?){{end}}/g,(_,yes)=>pathname==='/public-demo'?yes:'').replaceAll('{{.Native}}',chainId===80002?'POL':'ETH'));}
+  if(pathname==='/' || pathname==='' || pathname==='/public-demo' || pathname==='/shared-demo'){res.setHeader('Content-Type','text/html');return res.end((await fs.readFile(path.join(root,'internal/web/templates/index.html'),'utf8')).replace(/{{if \.Public}}([\s\S]*?){{else}}([\s\S]*?){{end}}/g,(_,yes,no)=>pathname==='/public-demo'?yes:no).replace(/{{if \.Public}}([\s\S]*?){{end}}/g,(_,yes)=>pathname==='/public-demo'?yes:'').replace(/{{if \.Shared}}([\s\S]*?){{end}}/g,(_,yes)=>pathname==='/shared-demo'?yes:'').replaceAll('{{.Native}}',chainId===80002?'POL':'ETH'));}
   if(pathname==='/api/faucet' && req.method==='GET')return respond({enabled:true,csrfToken:'fixture'});
   if(pathname==='/api/faucet' && req.method==='POST'){
    assert.equal(req.headers['x-wallet-csrf'],'fixture'); assert.equal(body.address,address);
@@ -122,6 +122,13 @@ const server = http.createServer(async (req,res)=>{
   assert.ok(!publicRequests.some(path=>path.includes('/api/wallet') || path.includes('/api/faucet')), 'visitor never requests private wallet data');
   assert.match(await page.locator('#wallet-balance').textContent(),/1/);
   console.log('PASS: shared public wallet layout, read-only controls, public balance query, no private requests, mobile layout (mock APIs).');
+  await page.goto(base+'/shared-demo');
+  await page.locator('#wallet-dashboard').waitFor({state:'visible'});
+  assert.equal(await page.locator('a[href="/login"]').count(),0);
+  assert.equal(await page.locator('#manage-accounts').isDisabled(),true);
+  await view('send-panel');
+  assert.equal(await page.locator('#send-form button[type=submit]').isEnabled(),true);
+  console.log('PASS: shared demo has full wallet UI without owner login; management disabled.');
   for(const [slug,id] of Object.entries(networks)){
    await page.goto(base+'/net/'+slug+'/');await page.locator('#wallet-dashboard').waitFor({state:'visible'});
    assert.equal(await page.locator('#network-select').inputValue(),'/net/'+slug);

@@ -1,11 +1,22 @@
-# 公開唯讀 Demo 部署
+# 公開 Demo 部署
 
-目標：`https://wallet.tedlin.fyi`，所有 IP 可瀏覽與查詢；只有管理者可操作錢包。
+目標：`https://wallet.tedlin.fyi`，所有 IP 可開啟共用測試錢包；簽署新交易與匯出加密金鑰仍需錢包密碼。
 Cloudflare Free + 公開 Tunnel + Oracle Ubuntu VM + GitHub Actions/GHCR。
 不啟用 Zero Trust 訂閱、Access、Service Token 或按量付費附加產品。
 域名註冊與續約另計。免費方案仍可能限流、中斷或回收；不是可用性保證。
 
-## 權限與資源邊界
+## 共用錢包模式
+
+設定 `SHARED_DEMO=true` 並保留正確的 `PUBLIC_ORIGIN`。首次須在原本受保護的模式建立專用測試錢包；共用模式遇到空錢包會拒絕啟動，避免被第一位陌生訪客占用。保留原有 token 可供切回受保護模式，但共用模式不使用它驗證訪客。
+
+- 首頁使用完整本機介面，沒有擁有者登入。EVM 測試網共用同一把測試金鑰；錢包地址、交易紀錄及狀態對訪客公開。
+- 報價、代幣查詢、簽署送出、重新廣播既有已簽交易、密碼驗證後匯出加密備份可用。
+- 新增／匯入／更名／封存帳戶、改密碼、背景掃描、流水匯入與內建 faucet 不對公眾開放；Solana/TRON 寫入不開放。這些限制由伺服器強制執行。
+- 簽署與備份合計全站每分鐘最多 10 次；API 原有總額度、併發、CSRF、Host/Origin、容器限制持續生效。CSRF 不是使用者身分驗證。
+- 變更模式前同步 VM 的 `compose.demo.yaml` 與 `verify-demo.py`；舊版驗收預期匿名 401，不能直接用來驗收共用模式。
+- 設定 `SHARED_DEMO=false` 可恢復下述訪客唯讀模式。
+
+## 受保護模式的權限與資源邊界
 
 - 設定 `PUBLIC_ORIGIN` 後，未登入首頁與本機錢包共用 `index.html`、側欄、總覽與語言／主題控制。訪客只載入唯讀控制器，不請求私人錢包資料；查詢公開地址後可在總覽查看餘額。公開 GET/HEAD 僅允許工作區頁面、作品頁、靜態檔案、EVM 網路、地址餘額、代幣公開餘額與交易查詢。
 - EVM 支援 Ethereum/Arbitrum/Base/OP Sepolia 與 Polygon Amoy。Solana/TRON 共用錢包狀態不對訪客公開。

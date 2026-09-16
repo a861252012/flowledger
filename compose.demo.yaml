@@ -19,7 +19,8 @@ services:
       GOMEMLIMIT: 480MiB
       WALLET_DIR: /data/wallet
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?Set HTTPS PUBLIC_ORIGIN}
-      WALLET_ACCESS_TOKEN: ${WALLET_ACCESS_TOKEN:?Set WALLET_ACCESS_TOKEN}
+      WALLET_ACCESS_TOKEN: ${WALLET_ACCESS_TOKEN:-}
+      SHARED_DEMO: ${SHARED_DEMO:-false}
       SEPOLIA_RPC_URL: ${SEPOLIA_RPC_URL:-https://ethereum-sepolia-rpc.publicnode.com}
     ports:
       - "127.0.0.1:8090:8090"

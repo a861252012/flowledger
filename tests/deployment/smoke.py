@@ -60,7 +60,8 @@ try:
     before = json.loads(data)
     assert status == 200 and not before["exists"]
     headers.update({"X-Wallet-CSRF": before["csrfToken"], "Content-Type": "application/json"})
-    status, _, data = checks.request(port, "/api/wallet/create", "POST", headers, json.dumps({"password": secrets.token_hex(20)}))
+    wallet_password = secrets.token_hex(20)
+    status, _, data = checks.request(port, "/api/wallet/create", "POST", headers, json.dumps({"password": wallet_password}))
     assert status == 200, "test wallet creation failed"
     # Never print the create response: it contains the disposable recovery phrase.
     status, _, data = checks.request(port, "/api/wallet", headers=headers)
@@ -75,6 +76,21 @@ try:
     status, _, data = checks.request(port, "/api/wallet", headers=headers)
     assert status == 200 and json.loads(data)["address"] == address, "keystore lost during replacement"
     assert docker("inspect", "--format", "{{.Config.User}}", name) == "10001:10001"
+    docker("stop", "-t", "45", name)
+    docker("rm", name)
+    docker(*args, "-e", "SHARED_DEMO=true", image)
+    ready()
+    port, shared_headers = checks.verify(name, version, port=8090)
+    status, _, data = checks.request(port, "/api/wallet", headers=shared_headers)
+    shared = json.loads(data)
+    assert shared["address"] == address, "shared mode changed wallet"
+    shared_headers.update({"X-Wallet-CSRF": shared["csrfToken"], "Content-Type": "application/json"})
+    for password, expected in [("incorrect-password", 401), (wallet_password, 200)]:
+        status, _, _ = checks.request(port, "/api/wallet/backup", "POST", shared_headers, json.dumps({"password": password}))
+        assert status == expected, "shared export password check failed"
+    for path in ["/api/wallet/create", "/api/wallet/accounts/update", "/api/wallet/scan", "/api/wallet/password"]:
+        assert checks.request(port, path, "POST", shared_headers, "{}")[0] == 403, "CSRF must not authorize management"
+    print("PASS: shared mode uses same wallet without login; password and management restrictions verified")
     print("PASS: real image, non-root/read-only runtime, login/CSRF, container replacement persistence, stale session rejection; no live RPC")
 finally:
     for args in [("rm", "-f", name), ("volume", "rm", volume)]:

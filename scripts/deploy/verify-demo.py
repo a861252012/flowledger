@@ -27,6 +27,16 @@ def verify(container, version, port=None):
     assert actual == version, "running binary version differs"
     headers = {"Host": urllib.parse.urlsplit(origin).netloc, "Origin": origin}
     status, _, page = request(port, "/", headers={**headers, "Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document"})
+    if env.get("SHARED_DEMO") == "true":
+        assert status == 200 and b'/static/wallet.js' in page and b'/static/shared.js' in page, "shared workspace missing"
+        assert b'href="/login"' not in page and b'data-public="true"' not in page, "owner login still shown"
+        assert request(port, "/api/wallet", headers=headers)[0] == 200, "shared wallet requires login"
+        assert request(port, "/api/wallet", headers={**headers, "Host": "evil.example"})[0] == 403
+        assert request(port, "/api/wallet", headers={**headers, "Origin": "https://evil.example"})[0] == 403
+        assert request(port, "/api/wallet/send", "POST", {**headers, "Content-Type": "application/json"}, "{}")[0] == 403, "missing CSRF accepted"
+        for path in ("/api/wallet/create", "/api/wallet/accounts", "/api/wallet/accounts/update", "/api/wallet/password", "/api/wallet/scan", "/api/faucet"):
+            assert request(port, path, "POST", {**headers, "Content-Type": "application/json"}, "{}")[0] == 403, "shared management exposed"
+        return port, headers
     assert status == 200 and b'public-query' in page, "public demo page missing"
     for path in ("/api/wallet/accounts", "/api/wallet/history", "/solana/api/status", "/tron/api/status", "/api/faucet"):
         assert request(port, path, headers=headers)[0] == 401, "private route exposed"
@@ -48,4 +58,4 @@ def verify(container, version, port=None):
 
 if __name__ == "__main__":
     verify(*sys.argv[1:])
-    print("PASS: version, authentication, public origin, cookie and CSRF checks")
+    print("PASS: version, configured access mode, public origin and CSRF checks")
