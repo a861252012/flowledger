@@ -125,7 +125,15 @@ const server = http.createServer(async (req,res)=>{
   await page.goto(base+'/shared-demo');
   await page.locator('#wallet-dashboard').waitFor({state:'visible'});
   assert.equal(await page.locator('a[href="/login"]').count(),0);
-  assert.equal(await page.locator('#manage-accounts').isDisabled(),true);
+  assert.equal(await page.locator('#manage-accounts').isEnabled(),true);
+  await page.locator('#manage-accounts').click();
+  await page.locator('#add-account').click();
+  await page.locator('#account-name').fill('訪客測試錢包');
+  await page.locator('#account-password').fill('visitor-test-password');
+  await page.locator('#account-password-confirm').fill('does-not-match');
+  await page.locator('#save-account').click();
+  assert.match(await page.locator('#account-feedback').textContent(), /兩次密碼不同/);
+  await page.locator('#close-account-manager').click();
   await view('send-panel');
   assert.equal(await page.locator('#send-form button[type=submit]').isEnabled(),true);
   for (const value of ['/solana','/tron']) assert.equal(await page.locator(`#network-select option[value="${value}"]`).isDisabled(),false);
@@ -135,7 +143,7 @@ const server = http.createServer(async (req,res)=>{
     assert.equal(await page.locator('#'+prefix+'-password-form button').isDisabled(),true);
     assert.equal(await page.locator('#'+prefix+'-transfer button[type=submit]').isEnabled(),true);
   }
-  console.log('PASS: shared demo enables all networks and chain transfer forms; administration disabled.');
+  console.log('PASS: shared demo enables named wallet creation and all networks; existing wallet administration restricted.');
   for(const [slug,id] of Object.entries(networks)){
    await page.goto(base+'/net/'+slug+'/');await page.locator('#wallet-dashboard').waitFor({state:'visible'});
    assert.equal(await page.locator('#network-select').inputValue(),'/net/'+slug);

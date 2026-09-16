@@ -83,10 +83,15 @@ func (s *Service) listAccounts() ([]AccountInfo, error) {
 	return result, nil
 }
 
-func (s *Service) AddAccount(name string) (*AccountInfo, error) {
+func (s *Service) AddAccount(name, password string) (*AccountInfo, error) {
 	name, err := accountName(name)
 	if err != nil {
 		return nil, err
+	}
+	if password != "" {
+		if err := ValidatePassword(password); err != nil {
+			return nil, err
+		}
 	}
 	root := s
 	if s.catalog != nil {
@@ -110,7 +115,22 @@ func (s *Service) AddAccount(name string) (*AccountInfo, error) {
 	if err := os.MkdirAll(path, 0700); err != nil {
 		return nil, err
 	}
-	// Persist a registration marker before exposing the new account in the selector.
+	complete := false
+	defer func() {
+		if !complete {
+			_ = os.RemoveAll(path)
+		}
+	}()
+	address := ""
+	if password != "" {
+		keys := NewKeystoreManager(path, root.keystore.scryptN, root.keystore.scryptP)
+		created, err := keys.Create(password)
+		if err != nil {
+			return nil, err
+		}
+		address = created.Address
+	}
+	// Publish only after the password-protected key is ready.
 	data, err := json.Marshal(accountMetadata{Name: name})
 	if err != nil {
 		return nil, err
@@ -118,7 +138,8 @@ func (s *Service) AddAccount(name string) (*AccountInfo, error) {
 	if err := atomicWriteFile(filepath.Join(path, "account.json"), data, 0600); err != nil {
 		return nil, err
 	}
-	return &AccountInfo{ID: id, Name: name}, nil
+	complete = true
+	return &AccountInfo{ID: id, Name: name, Address: address}, nil
 }
 
 func NewAccountService(client *chain.Client, root *Service, id string) (*Service, error) {

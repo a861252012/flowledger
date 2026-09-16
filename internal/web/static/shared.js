@@ -1,7 +1,7 @@
 'use strict';
 (() => {
   // Administration is also denied by SharedDemo on the server.
-  for (const id of ['manage-accounts', 'account-select', 'auto-scan-form', 'wallet-setup-form', 'keystore-form']) {
+  for (const id of ['auto-scan-form', 'wallet-setup-form', 'keystore-form']) {
     const element = document.getElementById(id);
     if (!element) continue;
     if (element.matches('button,select')) element.disabled = true;

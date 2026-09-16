@@ -36,4 +36,4 @@ EVM 收據是否成功、所在區塊是否仍在主鏈，以及是否 finalized
 
 ## 公開 Demo 部署
 
-[部署與驗證說明](docs/deployment.md)包含 VM、免費 Cloudflare Tunnel、共用測試錢包模式與 main 自動部署設定。共用模式下，訪客免網站登入使用同一個測試錢包；簽署新交易及匯出加密金鑰仍需錢包密碼，錢包管理操作停用。VM 主動拉取驗證後映像，不需要 CI SSH 憑證。公開網址：https://wallet.tedlin.fyi/ 。每次 push main 通過 CI 後發布映像，VM 每兩分鐘檢查更新。
+[部署與驗證說明](docs/deployment.md)包含 VM、免費 Cloudflare Tunnel、共用測試錢包模式與 main 自動部署設定。共用模式下，訪客免網站登入使用同一個測試錢包；簽署新交易及匯出加密金鑰仍需錢包密碼，訪客可建立並命名受密碼保護的 EVM 測試錢包（全站最多 20 個）；既有錢包的更名、封存仍受限制。VM 主動拉取驗證後映像，不需要 CI SSH 憑證。公開網址：https://wallet.tedlin.fyi/ 。每次 push main 通過 CI 後發布映像，VM 每兩分鐘檢查更新。

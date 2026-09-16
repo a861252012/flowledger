@@ -17,12 +17,15 @@ func TestSharedDemoBoundaries(t *testing.T) {
 		{"GET", "/api/wallet", 204}, {"GET", "/api/wallet/accounts", 204}, {"GET", "/api/wallet/history", 204},
 		{"POST", "/api/wallet/send", 204}, {"POST", "/net/base/api/wallet/send", 204},
 		{"POST", "/api/wallet/quote", 204}, {"POST", "/api/wallet/backup", 204},
-		{"POST", "/api/wallet/accounts", 403}, {"POST", "/api/wallet/accounts/update", 403},
+		{"POST", "/api/wallet/accounts", 204}, {"POST", "/api/wallet/accounts/update", 403},
 		{"POST", "/api/wallet/create", 403}, {"POST", "/api/wallet/import", 403},
 		{"POST", "/api/wallet/password", 403}, {"POST", "/api/wallet/scan", 403},
 		{"POST", "/net/base/api/wallet/scan", 403}, {"POST", "/api/faucet", 403},
 		{"POST", "/solana/api/create", 403}, {"POST", "/tron/api/send", 204}, {"POST", "/solana/api/send", 204}, {"POST", "/solana/api/backup", 204}, {"POST", "/tron/api/backup", 204}, {"POST", "/tron/api/restore", 403}, {"POST", "/solana/api/password", 403},
-		{"GET", "/accounts/abc/api/wallet", 403}, {"POST", "/api/../api/wallet/send", 403},
+		{"GET", "/accounts/abc/api/wallet", 403},
+		{"GET", "/accounts/0123456789abcdef0123456789abcdef/api/wallet", 204},
+		{"POST", "/accounts/0123456789abcdef0123456789abcdef/net/base/api/wallet/send", 204},
+		{"POST", "/accounts/0123456789abcdef0123456789abcdef/api/wallet/create", 403}, {"POST", "/api/../api/wallet/send", 403},
 		{"DELETE", "/api/wallet/send", 403}, {"GET", "/login", 303},
 	} {
 		w := httptest.NewRecorder()
@@ -37,7 +40,7 @@ func TestSharedDemoPasswordAttemptLimit(t *testing.T) {
 	h := SharedDemo(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) }), "")
 	for i := range 11 {
 		w := httptest.NewRecorder()
-		h.ServeHTTP(w, httptest.NewRequest("POST", []string{"/api/wallet/send", "/solana/api/send", "/tron/api/backup"}[i%3], nil))
+		h.ServeHTTP(w, httptest.NewRequest("POST", []string{"/api/wallet/send", "/solana/api/send", "/tron/api/backup", "/api/wallet/accounts"}[i%4], nil))
 		want := 204
 		if i == 10 {
 			want = 429

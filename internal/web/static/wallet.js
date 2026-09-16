@@ -1,6 +1,7 @@
 'use strict';
 (() => {
   $('confirm-send-button').textContent = `簽署並送出至 ${networkName}`;
+  const sharedDemo = !!document.querySelector('script[src="/static/shared.js"]');
   let walletState;
   let accounts = [];
   let accountEdit = null;
@@ -759,7 +760,7 @@
       const archive = node('button', item.archived ? '還原' : '封存', 'secondary');
       archive.type = 'button';
       archive.addEventListener('click', () => editAccount(item.archived ? 'restore' : 'archive', item));
-      actions.append(rename, archive);
+      if (!sharedDemo) actions.append(rename, archive);
       row.append(info, actions);
       list.append(row);
     }
@@ -779,7 +780,13 @@
       ? '先命名，下一步建立新錢包或匯入現有錢包。每個錢包分開保存金鑰與紀錄。'
       : mode === 'archive' ? '封存後會從切換清單隱藏，金鑰與紀錄仍會保留。這不會刪除或轉移鏈上資產。'
       : mode === 'restore' ? '還原後會重新出現在錢包切換清單。' : '名稱只用於本機辨識，不會改變錢包地址。';
-    (mode === 'archive' || mode === 'restore' ? $('save-account') : $('account-name')).focus();
+    if (sharedDemo && mode === 'create') {
+      $('account-password').value = '';
+      $('account-password-confirm').value = '';
+      $('save-account').textContent = '建立測試錢包';
+      $('account-editor-description').textContent = '名稱及地址會公開。請自行保管密碼；建立後可在設定與備份下載加密備份。';
+    }
+    (mode === 'archive'  || mode === 'restore' ? $('save-account') : $('account-name')).focus();
   }
 
   $('manage-accounts').addEventListener('click', async () => {
@@ -811,7 +818,13 @@
     try {
       const name = $('account-name').value.trim();
       if (mode === 'create') {
-        const created = await walletRequest('/api/wallet/accounts', {name});
+        const body = {name};
+        if (sharedDemo) {
+          if ($('account-password').value !== $('account-password-confirm').value) throw new Error('兩次密碼不同');
+          body.password = $('account-password').value;
+        }
+        const created = await walletRequest('/api/wallet/accounts', body);
+        if (sharedDemo) { $('account-password').value = ''; $('account-password-confirm').value = ''; }
         location.href = accountURL(created.id);
         return;
       }

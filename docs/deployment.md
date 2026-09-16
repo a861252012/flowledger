@@ -11,9 +11,10 @@ Cloudflare Free + 公開 Tunnel + Oracle Ubuntu VM + GitHub Actions/GHCR。
 
 - 首頁使用完整本機介面，沒有擁有者登入。EVM 測試網共用同一把測試金鑰；錢包地址、交易紀錄及狀態對訪客公開。
 - 報價、代幣查詢、簽署送出、重新廣播既有已簽交易、密碼驗證後匯出加密備份可用。
-- 新增／匯入／更名／封存帳戶、改密碼、背景掃描、流水匯入與內建 faucet 不對公眾開放。Solana Devnet 與 TRON Shasta 的查詢、報價、密碼簽署、既有交易重送與加密備份可用。這些限制由伺服器強制執行。
+- 匯入／更名／封存帳戶、改密碼、背景掃描、流水匯入與內建 faucet 不對公眾開放。Solana Devnet 與 TRON Shasta 的查詢、報價、密碼簽署、既有交易重送與加密備份可用。這些限制由伺服器強制執行。
 - Solana/TRON 各自使用獨立測試錢包及備份；只有帶有效 `WALLET_ACCESS_TOKEN` 管理憑證及 CSRF 的 CLI 請求可呼叫 `/solana/api/create`、`/tron/api/create` 初始化空錢包，不能覆寫已有錢包。訪客不需登入。
-- 三種錢包的簽署與備份合計全站每分鐘最多 10 次；API 原有總額度、併發、CSRF、Host/Origin、容器限制持續生效。CSRF 不是使用者身分驗證。
+- EVM「管理錢包」允許訪客以名稱與 12–128 字元密碼一次建立獨立錢包，再切換使用；不先公開空帳戶。全站最多 20 個帳戶（含主要錢包），名稱與地址公開，請下載加密備份保存。
+- 建立帳戶與三種錢包的簽署、備份合計全站每分鐘最多 10 次；API 原有總額度、併發、CSRF、Host/Origin、容器限制持續生效。CSRF 不是使用者身分驗證。
 - 變更模式前同步 VM 的 `compose.demo.yaml` 與 `verify-demo.py`；舊版驗收預期匿名 401，不能直接用來驗收共用模式。
 - 設定 `SHARED_DEMO=false` 可恢復下述訪客唯讀模式。
 

@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"errors"
+	"github.com/a861252012/testnet-wallet-lab/internal/wallet"
 	"net/http"
 	"path"
 	"strings"
@@ -33,9 +34,20 @@ func SharedDemo(next http.Handler, token string) http.Handler {
 		if route == "" {
 			route = "/"
 		}
-		if path.Clean(r.URL.Path) != route || strings.HasPrefix(route, "/accounts/") {
+		if path.Clean(r.URL.Path) != route {
 			respondWallet(w, http.StatusForbidden, nil, errSharedDemo)
 			return
+		}
+		if after, ok := strings.CutPrefix(route, "/accounts/"); ok {
+			parts := strings.SplitN(after, "/", 2)
+			if _, err := wallet.ParseAccountID(parts[0]); err != nil {
+				respondWallet(w, 403, nil, errSharedDemo)
+				return
+			}
+			route = "/"
+			if len(parts) == 2 {
+				route += parts[1]
+			}
 		}
 		if after, ok := strings.CutPrefix(route, "/net/"); ok {
 			parts := strings.SplitN(after, "/", 2)
@@ -62,12 +74,12 @@ func SharedDemo(next http.Handler, token string) http.Handler {
 				return
 			case "/solana/api/quote", "/solana/api/send", "/solana/api/retry", "/solana/api/backup",
 				"/tron/api/quote", "/tron/api/send", "/tron/api/retry", "/tron/api/backup":
-			case "/api/wallet/quote", "/api/wallet/send", "/api/wallet/retry", "/api/wallet/token", "/api/wallet/exchange/pools", "/api/wallet/backup":
+			case "/api/wallet/accounts", "/api/wallet/quote", "/api/wallet/send", "/api/wallet/retry", "/api/wallet/token", "/api/wallet/exchange/pools", "/api/wallet/backup":
 			default:
 				respondWallet(w, http.StatusForbidden, nil, errSharedDemo)
 				return
 			}
-			if strings.HasSuffix(route, "/send") || strings.HasSuffix(route, "/backup") {
+			if route == "/api/wallet/accounts" || strings.HasSuffix(route, "/send") || strings.HasSuffix(route, "/backup") {
 				mu.Lock()
 				if time.Since(window) >= time.Minute {
 					window, attempts = time.Now(), 0

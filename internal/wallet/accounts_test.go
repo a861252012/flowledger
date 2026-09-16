@@ -23,7 +23,7 @@ func TestAccountAndNetworkIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	info, err := root.AddAccount("轉帳測試")
+	info, err := root.AddAccount("轉帳測試", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,11 +86,11 @@ func TestAccountLifecycle(t *testing.T) {
 		t.Fatal("archived last active wallet")
 	}
 	for _, name := range []string{"", "  ", "a\nb", strings.Repeat("名", 41)} {
-		if _, err := root.AddAccount(name); err == nil {
+		if _, err := root.AddAccount(name, ""); err == nil {
 			t.Fatalf("accepted invalid name %q", name)
 		}
 	}
-	added, err := root.AddAccount("  收款測試  ")
+	added, err := root.AddAccount("  收款測試  ", "")
 	if err != nil || added.Name != "收款測試" {
 		t.Fatalf("create: %+v %v", added, err)
 	}
@@ -151,5 +151,50 @@ func TestAccountLifecycle(t *testing.T) {
 		if err != nil || !bytes.Equal(data, journalBefore) {
 			t.Fatal("journal changed", err)
 		}
+	}
+}
+
+func TestNamedAccountCreatedWithPassword(t *testing.T) {
+	client, err := chain.New("http://127.0.0.1:1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	root, err := NewService(client, t.TempDir(), 2, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	if _, err := root.AddAccount("bad password", "short"); err == nil {
+		t.Fatal("accepted weak password")
+	}
+	before, err := root.Accounts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(before) != 1 {
+		t.Fatal("failed creation left registered account")
+	}
+	added, err := root.AddAccount("我的測試錢包", "visitor-test-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if added.Address == "" {
+		t.Fatal("exposed uninitialized account")
+	}
+	account, err := NewAccountService(client, root, added.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer account.Close()
+	if _, err := account.Backup("wrong-password"); err == nil {
+		t.Fatal("wrong password accepted")
+	}
+	if _, err := account.Backup("visitor-test-password"); err != nil {
+		t.Fatal(err)
+	}
+	list, err := root.Accounts()
+	if err != nil || len(list) != 2 || list[1].Name != added.Name || list[1].Address != added.Address {
+		t.Fatal("name/address not persisted", err)
 	}
 }

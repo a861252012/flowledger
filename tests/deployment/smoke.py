@@ -91,6 +91,26 @@ try:
         assert status == expected, "shared export password check failed"
     for path in ["/api/wallet/create", "/api/wallet/accounts/update", "/api/wallet/scan", "/api/wallet/password"]:
         assert checks.request(port, path, "POST", shared_headers, "{}")[0] == 403, "CSRF must not authorize management"
+    assert checks.request(port, "/api/wallet/accounts", "POST", shared_headers, json.dumps({"name": "missing password"}))[0] == 400
+    status, _, data = checks.request(port, "/api/wallet/accounts", "POST", shared_headers, json.dumps({"name": "訪客測試錢包", "password": wallet_password}))
+    assert status == 200, "anonymous named wallet creation rejected"
+    visitor = json.loads(data)
+    assert visitor["name"] == "訪客測試錢包" and visitor["address"] and visitor["address"] != address
+    visitor_prefix = "/accounts/"+visitor["id"]
+    status, _, data = checks.request(port, visitor_prefix+"/api/wallet", headers=shared_headers)
+    visitor_status = json.loads(data)
+    assert status == 200 and visitor_status["address"] == visitor["address"]
+    visitor_headers = {**shared_headers, "X-Wallet-CSRF": visitor_status["csrfToken"]}
+    assert checks.request(port, visitor_prefix+"/api/wallet/backup", "POST", visitor_headers, json.dumps({"password": wallet_password}))[0] == 200
+    assert checks.request(port, visitor_prefix+"/api/wallet/create", "POST", visitor_headers, "{}")[0] == 403
+    # Start a fresh rate-limit window for the independent chain-wallet checks.
+    docker("stop", "-t", "45", name)
+    docker("rm", name)
+    docker(*args, "-e", "SHARED_DEMO=true", image)
+    ready()
+    status, _, data = checks.request(port, "/api/wallet", headers=shared_headers)
+    assert status == 200
+    shared_headers["X-Wallet-CSRF"] = json.loads(data)["csrfToken"]
     chain_addresses = {}
     for family in ["solana", "tron"]:
         prefix = "/"+family+"/api/"
@@ -110,6 +130,9 @@ try:
     docker("rm", name)
     docker(*args, "-e", "SHARED_DEMO=true", image)
     ready()
+    status, _, data = checks.request(port, visitor_prefix+"/api/wallet", headers=shared_headers)
+    assert status == 200 and json.loads(data)["address"] == visitor["address"]
+    print("PASS: anonymous named wallet initialization, password-protected backup and persistence")
     for family, address in chain_addresses.items():
         status, _, data = checks.request(port, "/"+family+"/api/status", headers=shared_headers)
         assert status == 200 and json.loads(data)["address"] == address

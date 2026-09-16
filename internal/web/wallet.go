@@ -126,13 +126,20 @@ func registerWalletRoutes(mux *http.ServeMux, ws *wallet.Service) {
 	}))
 	mux.HandleFunc("POST /api/wallet/accounts", walletFilter(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
-			Name string `json:"name"`
+			Name     string `json:"name"`
+			Password string `json:"password"`
 		}
 		if err := decodeStrictJSON(w, r, &req); err != nil {
 			respondWallet(w, 400, nil, err)
 			return
 		}
-		result, err := ws.AddAccount(req.Name)
+		if r.Context().Value(sharedDemoKey{}) == true {
+			if err := wallet.ValidatePassword(req.Password); err != nil {
+				respondWallet(w, 400, nil, err)
+				return
+			}
+		}
+		result, err := ws.AddAccount(req.Name, req.Password)
 		if err != nil {
 			respondWallet(w, 400, nil, err)
 			return
