@@ -9,9 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
-// Network, Balance, Transaction, Movement, Activity, and ScannedBlock are the
-// package's outward-facing representations. Numeric chain values stay typed in
-// the domain model and are converted to the existing JSON strings only here.
+// These types hold API and storage data. Convert numeric chain values to JSON strings here.
 type Network struct {
 	ChainID   int       `json:"chainId"`
 	Block     string    `json:"block"`
@@ -58,8 +56,7 @@ type Activity struct {
 	Error     string     `json:"error,omitempty"`
 }
 
-// ScannedBlock is the storage-facing scanner record consumed by wallet cursor
-// persistence. Hashes and addresses are encoded only when crossing that boundary.
+// ScannedBlock stores scan results with the wallet cursor, using string hashes and addresses.
 type ScannedBlock struct {
 	Hashes []string
 	Tokens []string
@@ -201,9 +198,7 @@ func activityToAPI(value activityRecord) *Activity {
 	return result
 }
 
-// rpcBlock is the JSON-RPC wire shape used for full block discovery. It is
-// deliberately separate from both geth's signed transaction type and scanner
-// storage records.
+// rpcBlock holds a full block from JSON-RPC before its transactions are checked.
 type rpcBlock struct {
 	Hash         string           `json:"hash"`
 	Transactions []rpcTransaction `json:"transactions"`

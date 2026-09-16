@@ -126,7 +126,7 @@ type ChainQuoteProvider interface {
 // CreateQuote builds and validates a server-bound fee quote.
 func CreateQuote(ctx context.Context, provider ChainQuoteProvider, from common.Address, command QuoteCommand) (*BoundQuote, error) {
 	action := command.Action
-	// The command has already crossed the validated request boundary.
+	// The request has already been validated.
 	targetAddr := common.HexToAddress(string(command.To))
 
 	var (
@@ -318,9 +318,8 @@ func CreateQuote(ctx context.Context, provider ChainQuoteProvider, from common.A
 	maxFeePerGas := new(big.Int).Mul(baseFee, big.NewInt(2))
 	maxFeePerGas.Add(maxFeePerGas, maxPriorityFeePerGas)
 
-	// Preliminary balance check against minimum possible execution cost (txValue + 21000 * maxFeePerGas)
-	// 21,000 gas is the protocol minimum for any transaction.
-	// If the wallet balance cannot cover even this minimum, calling EstimateGas would fail with an EVM OutOfFunds error.
+	// Stop early if the balance cannot cover the value plus 21,000 gas at the fee cap.
+	// EstimateGas would fail for insufficient funds too.
 	ethBalance, err := provider.BalanceAt(ctx, from, nil)
 	if err != nil {
 		return nil, err

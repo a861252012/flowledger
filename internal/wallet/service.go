@@ -21,7 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
-// Service orchestrates all wallet functions: keystore, quotes, transactions, and journal.
+// Service manages keys, quotes, transactions, and the journal.
 type Service struct {
 	historyOffset int
 	scanMu        sync.Mutex

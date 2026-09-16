@@ -18,8 +18,7 @@ const (
 	defaultTronRPC    = "https://api.shasta.trongrid.io"
 )
 
-// networkDefinition is the immutable catalog of networks exposed by the
-// process. Environment values are applied at the runtime boundary below.
+// networkDefinition lists the supported networks. Environment settings are applied below.
 type networkDefinition struct {
 	slug       string
 	envPrefix  string
@@ -34,9 +33,7 @@ var networkDefinitions = [...]networkDefinition{
 	{slug: "polygon", envPrefix: "POLYGON_AMOY", defaultRPC: "https://polygon-amoy.drpc.org", chainID: 80002},
 }
 
-// networkRuntimeConfig contains validated process configuration. It is kept
-// separate from networkDefinition so environment parsing remains an edge
-// concern and the service wiring consumes only typed values.
+// networkRuntimeConfig holds the checked settings used to start each network service.
 type networkRuntimeConfig struct {
 	slug    string
 	chainID int64
@@ -56,9 +53,7 @@ type runtimeConfig struct {
 	faucetPath     string
 }
 
-// loadConfig converts process environment values into the runtime settings
-// used by startup. Keeping this function side-effect free makes malformed
-// configuration testable without constructing wallets or contacting an RPC.
+// loadConfig reads and checks environment settings without opening wallets or calling RPCs.
 func loadConfig(getenv func(string) string) (runtimeConfig, error) {
 	portText := cmp.Or(getenv("PORT"), strconv.Itoa(defaultHTTPPort))
 	port, err := strconv.Atoi(portText)
@@ -112,8 +107,7 @@ func rpcURLs(primary, fallback string) []string {
 	return urls
 }
 
-// faucetConfig is the file wire shape. It deliberately remains primitive at
-// the edge; startup converts it into account services only after validation.
+// faucetConfig matches the faucet JSON file. Startup checks it before loading accounts.
 type faucetConfig struct {
 	AccountID    string `json:"accountId"`
 	Password     string `json:"password"`

@@ -63,7 +63,7 @@ type ChainCaller interface {
 	CallContract(ctx context.Context, msg ethereum.CallMsg, blockNumber *big.Int) ([]byte, error)
 }
 
-// DecodedCalldata holds verified independent unpack results from raw transaction data.
+// DecodedCalldata holds the fields decoded and checked from transaction calldata.
 type DecodedCalldata struct {
 	Method          string
 	Target          common.Address

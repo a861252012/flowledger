@@ -9,8 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
-// userOperationRPC is the primitive JSON-RPC representation of an ERC-4337
-// v0.6 user operation. Conversion to UserOperation is the trust boundary.
+// userOperationRPC matches the v0.6 JSON-RPC fields. Check them when converting to UserOperation.
 type userOperationRPC struct {
 	Sender               string `json:"sender"`
 	Nonce                string `json:"nonce"`
@@ -25,8 +24,7 @@ type userOperationRPC struct {
 	Signature            string `json:"signature"`
 }
 
-// packedUserOperationRPC is the primitive JSON-RPC representation of an
-// ERC-4337 v0.7 packed user operation.
+// packedUserOperationRPC matches the v0.7 JSON-RPC fields.
 type packedUserOperationRPC struct {
 	Sender             string `json:"sender"`
 	Nonce              string `json:"nonce"`
