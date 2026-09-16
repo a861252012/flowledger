@@ -2,6 +2,8 @@
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [正體中文（台灣）](README.zh-TW.md) · [繁體中文（香港）](README.zh-HK.md)
 
+**[Live demo (testnets only)](https://wallet.tedlin.fyi/)**
+
 A multi-chain testnet wallet experiment written in Go, for exploring transfers, token swaps, transaction tracking and recovery after RPC failures or restarts.
 
 ![Wallet interface with local test data](docs/images/wallet-overview.png)

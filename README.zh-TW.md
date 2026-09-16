@@ -2,6 +2,8 @@
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [正體中文（台灣）](README.zh-TW.md) · [繁體中文（香港）](README.zh-HK.md)
 
+**[線上 Demo（僅供測試鏈使用）](https://wallet.tedlin.fyi/)**
+
 用 Go 寫的多鏈測試網錢包實驗專案，用來實作轉帳、代幣兌換、交易追蹤，以及 RPC 失敗或程序重啟後的恢復處理。
 
 ![錢包介面，使用本機測試資料](docs/images/wallet-overview.png)
