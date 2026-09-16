@@ -20,17 +20,17 @@ func TestReceiptMovements(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(movements) != 2 || movements[0].Kind != "fee" || movements[0].Raw != "42000" || movements[1].Kind != "send" || movements[1].Raw != "100" {
+	if len(movements) != 2 || movements[0].kind != movementFee || movements[0].raw.Cmp(big.NewInt(42000)) != 0 || movements[1].kind != movementSend || movements[1].raw.Cmp(big.NewInt(100)) != 0 {
 		t.Fatalf("wrong outgoing ledger %+v", movements)
 	}
 	receipt.Status = 0
 	movements, err = receiptMovements(tx, receipt, owner, owner)
-	if err != nil || len(movements) != 1 || movements[0].Kind != "fee" {
+	if err != nil || len(movements) != 1 || movements[0].kind != movementFee {
 		t.Fatalf("revert moved principal %+v %v", movements, err)
 	}
 	receipt.Status = 1
 	movements, err = receiptMovements(tx, receipt, owner, other)
-	if err != nil || len(movements) != 1 || movements[0].Kind != "receive" {
+	if err != nil || len(movements) != 1 || movements[0].kind != movementReceive {
 		t.Fatalf("receiver paid sender gas %+v %v", movements, err)
 	}
 	self := types.NewTx(&types.DynamicFeeTx{ChainID: big.NewInt(SepoliaID), To: &owner, Value: big.NewInt(100), Gas: 21000})
@@ -49,7 +49,7 @@ func TestReceiptTokenAndWETHMovementEvidence(t *testing.T) {
 	log := &types.Log{Address: other, TxHash: r.TxHash, BlockHash: r.BlockHash, BlockNumber: 10, Index: 3, Data: common.LeftPadBytes(big.NewInt(100).Bytes(), 32), Topics: []common.Hash{transferTopic, common.BytesToHash(other.Bytes()), common.BytesToHash(owner.Bytes())}}
 	r.Logs = []*types.Log{log}
 	moves, err := receiptMovements(tx, r, other, owner)
-	if err != nil || len(moves) != 1 || moves[0].Asset != other.Hex() || moves[0].Kind != "receive" {
+	if err != nil || len(moves) != 1 || moves[0].asset != other.Hex() || moves[0].kind != movementReceive {
 		t.Fatalf("token transfer %+v %v", moves, err)
 	}
 	log.Topics = append(log.Topics, common.Hash{})
@@ -60,7 +60,7 @@ func TestReceiptTokenAndWETHMovementEvidence(t *testing.T) {
 	log.Address = weth
 	log.Topics = []common.Hash{withdrawalTopic, common.BytesToHash(owner.Bytes())}
 	moves, err = receiptMovements(tx, r, owner, owner)
-	if err != nil || len(moves) != 3 || moves[1].Kind != "send" || moves[1].Asset != weth.Hex() || moves[2].Asset != "ETH" || moves[2].Kind != "receive" {
+	if err != nil || len(moves) != 3 || moves[1].kind != movementSend || moves[1].asset != weth.Hex() || moves[2].asset != "ETH" || moves[2].kind != movementReceive {
 		t.Fatalf("withdrawal %+v %v", moves, err)
 	}
 	log.Address = other
@@ -207,5 +207,26 @@ func TestDiscoveryScopesLogsAndDeduplicates(t *testing.T) {
 	}
 	if len(ids) != 1 || ids[0] != hash.Hex() || from != 1 || to != 2 || blocks != 2 {
 		t.Fatalf("incorrect discovery %v %d %d %d", ids, from, to, blocks)
+	}
+}
+
+func TestPolygonMovementsUsePOL(t *testing.T) {
+	owner := common.HexToAddress("0x1111111111111111111111111111111111111111")
+	tx := types.NewTx(&types.DynamicFeeTx{ChainID: big.NewInt(80002), To: &owner, Value: big.NewInt(1), Gas: 21000})
+	receipt := &types.Receipt{GasUsed: 21000, EffectiveGasPrice: big.NewInt(2), Status: 1}
+	moves, err := receiptMovements(tx, receipt, owner, owner, 80002)
+	if err != nil || len(moves) != 3 {
+		t.Fatal(moves, err)
+	}
+	for _, move := range moves {
+		if move.asset != "POL" {
+			t.Fatal("mislabelled native POL", move)
+		}
+	}
+	for _, id := range []int64{1, 137} {
+		if c, err := NewNetwork(id, []string{"http://127.0.0.1:1"}); err == nil {
+			c.Close()
+			t.Fatal("accepted mainnet", id)
+		}
 	}
 }

@@ -3,6 +3,7 @@ package web
 import (
 	"bytes"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -278,5 +279,105 @@ func TestActivityRoutesStayLocalAndExportExactCSV(t *testing.T) {
 	handler.ServeHTTP(response, req)
 	if response.Code != 400 {
 		t.Fatal("foreign host accessed export")
+	}
+}
+
+func TestNewWalletMutationRoutesRequireCSRF(t *testing.T) {
+	c, err := chain.New("http://127.0.0.1:1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	ws, err := wallet.NewService(c, t.TempDir(), 2, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Close()
+	handler, err := New(c, ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/api/wallet/import-keystore", "/api/wallet/password", "/api/wallet/accounts", "/api/wallet/scan", "/api/wallet/exchange/pools"} {
+		req := httptest.NewRequest("POST", "http://localhost:8090"+path, strings.NewReader(`{}`))
+		req.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, req)
+		if response.Code != 403 {
+			t.Fatalf("%s accepted without CSRF: %d", path, response.Code)
+		}
+	}
+}
+
+func TestNormalizeWorkspaceRedirect(t *testing.T) {
+	cases := []struct {
+		path       string
+		wantTarget string
+		wantOK     bool
+	}{
+		{path: "/solana", wantTarget: "/solana/", wantOK: true},
+		{path: "/tron", wantTarget: "/tron/", wantOK: true},
+		{path: "/solana/", wantTarget: "", wantOK: false},
+		{path: "/tron/", wantTarget: "", wantOK: false},
+		{path: "/solana/api/status", wantTarget: "", wantOK: false},
+		{path: "/tron/api/status", wantTarget: "", wantOK: false},
+		{path: "/accounts/acc1", wantTarget: "/accounts/acc1/", wantOK: true},
+		{path: "/accounts/acc1/", wantTarget: "", wantOK: false},
+		{path: "/accounts/acc1/net/arbitrum", wantTarget: "/accounts/acc1/net/arbitrum/", wantOK: true},
+		{path: "/accounts/acc1/net/arbitrum/", wantTarget: "", wantOK: false},
+		{path: "/accounts/acc1/net/arbitrum/api/network", wantTarget: "", wantOK: false},
+		{path: "/accounts", wantTarget: "", wantOK: false},
+		{path: "/accounts/", wantTarget: "", wantOK: false},
+		{path: "/", wantTarget: "", wantOK: false},
+		{path: "/healthz", wantTarget: "", wantOK: false},
+		{path: "/api/network", wantTarget: "", wantOK: false},
+	}
+
+	for _, tc := range cases {
+		gotTarget, gotOK := NormalizeWorkspaceRedirect(tc.path)
+		if gotOK != tc.wantOK || gotTarget != tc.wantTarget {
+			t.Errorf("NormalizeWorkspaceRedirect(%q) = (%q, %v), want (%q, %v)", tc.path, gotTarget, gotOK, tc.wantTarget, tc.wantOK)
+		}
+	}
+
+	// Test redirect handler behavior with query preservation
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if target, ok := NormalizeWorkspaceRedirect(r.URL.Path); ok {
+			if r.URL.RawQuery != "" {
+				target += "?" + r.URL.RawQuery
+			}
+			http.Redirect(w, r, target, http.StatusMovedPermanently)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
+	for _, tc := range []struct {
+		requestPath  string
+		wantLocation string
+	}{
+		{"/solana", "/solana/"},
+		{"/tron", "/tron/"},
+		{"/accounts/acc1", "/accounts/acc1/"},
+		{"/accounts/acc1/net/base", "/accounts/acc1/net/base/"},
+		{"/accounts/acc1/net/base?tab=history", "/accounts/acc1/net/base/?tab=history"},
+	} {
+		req := httptest.NewRequest("GET", tc.requestPath, nil)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusMovedPermanently {
+			t.Fatalf("%s status code: got %d, want %d", tc.requestPath, rec.Code, http.StatusMovedPermanently)
+		}
+		if got := rec.Header().Get("Location"); got != tc.wantLocation {
+			t.Fatalf("%s Location header: got %s, want %s", tc.requestPath, got, tc.wantLocation)
+		}
+	}
+
+	for _, okPath := range []string{"/solana/", "/tron/", "/accounts/acc1/", "/accounts/acc1/net/base/"} {
+		req := httptest.NewRequest("GET", okPath, nil)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s status code: got %d, want %d", okPath, rec.Code, http.StatusOK)
+		}
 	}
 }

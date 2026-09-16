@@ -2,8 +2,10 @@ package wallet
 
 import (
 	"crypto/ecdsa"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,11 +22,14 @@ import (
 
 // KeystoreManager handles wallet generation, derivation, encryption, and local disk persistence.
 type KeystoreManager struct {
-	mu        sync.Mutex
-	walletDir string
-	scryptN   int
-	scryptP   int
-	scryptSem chan struct{}
+	coinType   uint32
+	catalogMu  *sync.Mutex
+	catalogDir string
+	mu         sync.Mutex
+	walletDir  string
+	scryptN    int
+	scryptP    int
+	scryptSem  chan struct{}
 }
 
 func NewKeystoreManager(walletDir string, scryptN, scryptP int) *KeystoreManager {
@@ -35,7 +40,7 @@ func NewKeystoreManager(walletDir string, scryptN, scryptP int) *KeystoreManager
 		scryptP = keystore.StandardScryptP
 	}
 	return &KeystoreManager{
-		walletDir: walletDir,
+		walletDir: walletDir, catalogDir: walletDir, catalogMu: &sync.Mutex{},
 		scryptN:   scryptN,
 		scryptP:   scryptP,
 		scryptSem: make(chan struct{}, 1), // Bounded concurrency: max 1 simultaneous scrypt operations
@@ -59,6 +64,10 @@ func ValidatePassword(password string) error {
 // DeriveKey derives an Ethereum address and private key using BIP39 mnemonic and BIP44 path m/44'/60'/0'/0/0.
 // The BIP39 passphrase is fixed to empty string ("").
 func DeriveKey(mnemonic string) (common.Address, *ecdsa.PrivateKey, error) {
+	return deriveCoinKey(mnemonic, 60)
+}
+
+func deriveCoinKey(mnemonic string, coin uint32) (common.Address, *ecdsa.PrivateKey, error) {
 	normalized := strings.Join(strings.Fields(strings.TrimSpace(mnemonic)), " ")
 	if !bip39.IsMnemonicValid(normalized) {
 		return common.Address{}, nil, ErrInvalidMnemonic
@@ -82,7 +91,7 @@ func DeriveKey(mnemonic string) (common.Address, *ecdsa.PrivateKey, error) {
 	}
 	defer wipeBytes(purpose.Key)
 	// 60' (coin_type: Ethereum)
-	coinType, err := purpose.NewChildKey(bip32.FirstHardenedChild + 60)
+	coinType, err := purpose.NewChildKey(bip32.FirstHardenedChild + coin)
 	if err != nil {
 		return common.Address{}, nil, err
 	}
@@ -166,6 +175,8 @@ func (km *KeystoreManager) Address() (string, error) {
 // encrypts using StandardScrypt into keystore.json, and returns address and mnemonic.
 // Never overwrites an existing wallet. Mnemonic is returned once and never persisted.
 func (km *KeystoreManager) Create(password string) (*CreateResponse, error) {
+	km.catalogMu.Lock()
+	defer km.catalogMu.Unlock()
 	if err := ValidatePassword(password); err != nil {
 		return nil, err
 	}
@@ -191,7 +202,11 @@ func (km *KeystoreManager) Create(password string) (*CreateResponse, error) {
 		return nil, err
 	}
 
-	addr, privKey, err := DeriveKey(mnemonic)
+	coin := km.coinType
+	if coin == 0 {
+		coin = 60
+	}
+	addr, privKey, err := deriveCoinKey(mnemonic, coin)
 	if err != nil {
 		return nil, err
 	}
@@ -206,6 +221,9 @@ func (km *KeystoreManager) Create(password string) (*CreateResponse, error) {
 		Id:         uuid.New(),
 		Address:    addr,
 		PrivateKey: privKey,
+	}
+	if err := km.checkDuplicateAddress(addr); err != nil {
+		return nil, err
 	}
 	keyJSON, err := keystore.EncryptKey(key, password, km.scryptN, km.scryptP)
 	if err != nil {
@@ -226,6 +244,8 @@ func (km *KeystoreManager) Create(password string) (*CreateResponse, error) {
 // Import restores a wallet from an existing 12/15/18/21/24-word mnemonic.
 // Never overwrites an existing wallet.
 func (km *KeystoreManager) Import(mnemonic, password string) (*ImportResponse, error) {
+	km.catalogMu.Lock()
+	defer km.catalogMu.Unlock()
 	if err := ValidatePassword(password); err != nil {
 		return nil, err
 	}
@@ -236,7 +256,11 @@ func (km *KeystoreManager) Import(mnemonic, password string) (*ImportResponse, e
 		return nil, ErrInvalidMnemonic
 	}
 
-	addr, privKey, err := DeriveKey(mnemonic)
+	coin := km.coinType
+	if coin == 0 {
+		coin = 60
+	}
+	addr, privKey, err := deriveCoinKey(mnemonic, coin)
 	if err != nil {
 		return nil, err
 	}
@@ -261,6 +285,9 @@ func (km *KeystoreManager) Import(mnemonic, password string) (*ImportResponse, e
 		Id:         uuid.New(),
 		Address:    addr,
 		PrivateKey: privKey,
+	}
+	if err := km.checkDuplicateAddress(addr); err != nil {
+		return nil, err
 	}
 	keyJSON, err := keystore.EncryptKey(key, password, km.scryptN, km.scryptP)
 	if err != nil {
@@ -304,6 +331,97 @@ func (km *KeystoreManager) Backup(password string) (json.RawMessage, error) {
 	return json.RawMessage(data), nil
 }
 
+// ImportKeystore accepts a bounded V3 scrypt file and re-encrypts it with local parameters.
+func (km *KeystoreManager) ImportKeystore(data json.RawMessage, password, newPassword string) (*ImportResponse, error) {
+	km.catalogMu.Lock()
+	defer km.catalogMu.Unlock()
+	if err := ValidatePassword(newPassword); err != nil {
+		return nil, err
+	}
+	var meta struct {
+		Version int                 `json:"version"`
+		Crypto  keystore.CryptoJSON `json:"crypto"`
+	}
+	if len(data) > 8192 || json.Unmarshal(data, &meta) != nil || meta.Version != 3 || meta.Crypto.KDF != "scrypt" || meta.Crypto.Cipher != "aes-128-ctr" {
+		return nil, errors.New("請選擇 V3 scrypt 加密的 Keystore JSON")
+	}
+	params := map[string]int{}
+	for _, name := range []string{"n", "r", "p", "dklen"} {
+		value, ok := meta.Crypto.KDFParams[name].(float64)
+		if !ok || value != math.Trunc(value) || value < 1 || value > keystore.StandardScryptN {
+			return nil, errors.New("Keystore 密碼運算參數無效")
+		}
+		params[name] = int(value)
+	}
+	n := params["n"]
+	if n < 2 || n&(n-1) != 0 || params["r"] != 8 || params["p"] > 6 || params["dklen"] != 32 {
+		return nil, errors.New("Keystore 密碼運算參數不在支援範圍")
+	}
+	salt, ok := meta.Crypto.KDFParams["salt"].(string)
+	if !ok {
+		return nil, errors.New("Keystore salt 格式錯誤")
+	}
+	saltBytes, saltErr := hex.DecodeString(salt)
+	iv, ivErr := hex.DecodeString(meta.Crypto.CipherParams.IV)
+	mac, macErr := hex.DecodeString(meta.Crypto.MAC)
+	ciphertext, cipherErr := hex.DecodeString(meta.Crypto.CipherText)
+	if saltErr != nil || len(saltBytes) < 16 || len(saltBytes) > 64 || ivErr != nil || len(iv) != 16 || macErr != nil || len(mac) != 32 || cipherErr != nil || len(ciphertext) != 32 {
+		return nil, errors.New("Keystore 加密欄位格式錯誤")
+	}
+	km.mu.Lock()
+	defer km.mu.Unlock()
+	if _, err := os.Lstat(km.keystorePath()); !os.IsNotExist(err) {
+		return nil, ErrWalletExists
+	}
+	if err := km.acquireScrypt(); err != nil {
+		return nil, err
+	}
+	defer km.releaseScrypt()
+	key, err := keystore.DecryptKey(data, password)
+	if err != nil {
+		return nil, ErrPasswordMismatch
+	}
+	defer wipePrivateKey(key.PrivateKey)
+	key.Address = crypto.PubkeyToAddress(key.PrivateKey.PublicKey)
+	if err := km.checkDuplicateAddress(key.Address); err != nil {
+		return nil, err
+	}
+	encrypted, err := keystore.EncryptKey(key, newPassword, km.scryptN, km.scryptP)
+	if err != nil {
+		return nil, err
+	}
+	if err := km.atomicWriteFile(km.keystorePath(), encrypted, 0600); err != nil {
+		return nil, err
+	}
+	return &ImportResponse{Address: key.Address.Hex()}, nil
+}
+
+func (km *KeystoreManager) ChangePassword(password, newPassword string) error {
+	if err := ValidatePassword(newPassword); err != nil {
+		return err
+	}
+	km.mu.Lock()
+	defer km.mu.Unlock()
+	data, err := os.ReadFile(km.keystorePath())
+	if err != nil {
+		return err
+	}
+	if err := km.acquireScrypt(); err != nil {
+		return err
+	}
+	defer km.releaseScrypt()
+	key, err := keystore.DecryptKey(data, password)
+	if err != nil {
+		return ErrPasswordMismatch
+	}
+	defer wipePrivateKey(key.PrivateKey)
+	encrypted, err := keystore.EncryptKey(key, newPassword, km.scryptN, km.scryptP)
+	if err != nil {
+		return err
+	}
+	return km.atomicWriteFile(km.keystorePath(), encrypted, 0600)
+}
+
 // DecryptKey decrypts the keystore file using the provided password.
 // The caller is responsible for wiping the returned private key after use.
 func (km *KeystoreManager) DecryptKey(password string) (*keystore.Key, error) {
@@ -331,7 +449,7 @@ func (km *KeystoreManager) DecryptKey(password string) (*keystore.Key, error) {
 }
 
 // atomicWriteFile writes data to a temp file, syncs to disk, renames to dest, and syncs the parent directory.
-func (km *KeystoreManager) atomicWriteFile(dest string, data []byte, perm os.FileMode) error {
+func atomicWriteFile(dest string, data []byte, perm os.FileMode) error {
 	dir := filepath.Dir(dest)
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
@@ -374,6 +492,10 @@ func (km *KeystoreManager) atomicWriteFile(dest string, data []byte, perm os.Fil
 	return d.Sync()
 }
 
+func (km *KeystoreManager) atomicWriteFile(dest string, data []byte, perm os.FileMode) error {
+	return atomicWriteFile(dest, data, perm)
+}
+
 func wipeBytes(b []byte) {
 	for i := range b {
 		b[i] = 0
@@ -388,4 +510,35 @@ func wipePrivateKey(k *ecdsa.PrivateKey) {
 	for i := range b {
 		b[i] = 0
 	}
+}
+
+// Multiple aliases for one signing address would otherwise have independent nonce journals.
+func (km *KeystoreManager) checkDuplicateAddress(address common.Address) error {
+	paths, err := filepath.Glob(filepath.Join(km.catalogDir, "accounts", "*", "keystore.json"))
+	if err != nil {
+		return err
+	}
+	paths = append(paths, filepath.Join(km.catalogDir, "keystore.json"))
+	for _, path := range paths {
+		if path == km.keystorePath() {
+			continue
+		}
+		data, err := os.ReadFile(path)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		var meta struct {
+			Address string `json:"address"`
+		}
+		if json.Unmarshal(data, &meta) != nil {
+			return errors.New("既有帳戶資料無法讀取")
+		}
+		if common.HexToAddress(meta.Address) == address {
+			return errors.New("此地址已存在另一個帳戶，請切換既有帳戶")
+		}
+	}
+	return nil
 }

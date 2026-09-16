@@ -61,3 +61,29 @@ func TestActivityCSVUsesRawEvidence(t *testing.T) {
 		t.Fatalf("lossy CSV %v", rows)
 	}
 }
+
+func TestChainActivityBoundaryValidatesEnumsAndAmounts(t *testing.T) {
+	valid := &chain.Activity{
+		Hash: "0x" + strings.Repeat("a", 64), State: "succeeded",
+		Movements: []chain.Movement{{
+			Kind: "receive", Asset: "ETH", Raw: "1000000000000000001",
+			Counterparty: "0x" + strings.Repeat("1", 40),
+		}},
+	}
+	domain, err := chainActivityToDomain(valid)
+	if err != nil || domain.state != activitySucceeded || len(domain.movements) != 1 || domain.movements[0].amount.String() != valid.Movements[0].Raw {
+		t.Fatalf("valid chain activity conversion failed: %+v %v", domain, err)
+	}
+	invalidKind := *valid
+	invalidKind.Movements = append([]chain.Movement{}, valid.Movements...)
+	invalidKind.Movements[0].Kind = "mint"
+	if _, err := chainActivityToDomain(&invalidKind); err == nil {
+		t.Fatal("unknown movement kind was accepted")
+	}
+	invalidAmount := *valid
+	invalidAmount.Movements = append([]chain.Movement{}, valid.Movements...)
+	invalidAmount.Movements[0].Raw = "1.5"
+	if _, err := chainActivityToDomain(&invalidAmount); err == nil {
+		t.Fatal("non-integer movement amount was accepted")
+	}
+}

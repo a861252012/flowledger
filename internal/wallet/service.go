@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/a861252012/flowledger/internal/chain"
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -22,16 +23,19 @@ import (
 
 // Service orchestrates all wallet functions: keystore, quotes, transactions, and journal.
 type Service struct {
-	client       *chain.Client
-	keystore     *KeystoreManager
-	quotes       *QuoteStore
-	journal      *JournalManager
-	csrfToken    string
-	sendMu       sync.Mutex
-	historyMu    sync.Mutex
-	walletDir    string
-	lockFile     *os.File
-	storageFault atomic.Bool
+	historyOffset int
+	scanMu        sync.Mutex
+	catalog       *Service
+	client        *chain.Client
+	keystore      *KeystoreManager
+	quotes        *QuoteStore
+	journal       *JournalManager
+	csrfToken     string
+	sendMu        sync.Mutex
+	historyMu     sync.Mutex
+	walletDir     string
+	lockFile      *os.File
+	storageFault  atomic.Bool
 }
 
 func NewService(client *chain.Client, walletDir string, scryptParams ...int) (*Service, error) {
@@ -66,7 +70,7 @@ func NewService(client *chain.Client, walletDir string, scryptParams ...int) (*S
 		}
 	}()
 	km := NewKeystoreManager(walletDir, n, p)
-	jm, err := NewJournalManager(walletDir)
+	jm, err := NewJournalManager(walletDir, client.ChainID())
 	if err != nil {
 		return nil, err
 	}
@@ -105,12 +109,39 @@ func (s *Service) CSRFToken() string {
 	return s.csrfToken
 }
 
+func sendResponseFromRecord(record *JournalRecord, state JournalState) *SendResponse {
+	return &SendResponse{
+		Hash:      string(record.Hash),
+		State:     string(state),
+		To:        string(record.To),
+		Amount:    record.Amount,
+		Symbol:    record.Symbol,
+		Action:    string(record.Action),
+		CreatedAt: record.CreatedAt.Format(time.RFC3339),
+	}
+}
+
 func (s *Service) Status() (*WalletInfo, error) {
 	addr, err := s.keystore.Address()
 	if err != nil && !errors.Is(err, ErrWalletNotFound) {
 		return nil, err
 	}
-	return &WalletInfo{Exists: err == nil, Address: addr, Path: "m/44'/60'/0'/0/0", CSRFToken: s.csrfToken, Exchange: map[string]string{"weth": common.HexToAddress(WETHAddress).Hex(), "usdc": common.HexToAddress(USDCAddress).Hex(), "router": common.HexToAddress(RouterAddress).Hex()}}, nil
+	info := &WalletInfo{
+		ChainID:   s.client.ChainID(),
+		Exists:    err == nil,
+		Address:   addr,
+		Path:      "m/44'/60'/0'/0/0",
+		CSRFToken: s.csrfToken,
+		Exchange: map[string]string{
+			"weth":   common.HexToAddress(WETHAddress).Hex(),
+			"usdc":   common.HexToAddress(USDCAddress).Hex(),
+			"router": common.HexToAddress(RouterAddress).Hex(),
+		},
+	}
+	if s.client.ChainID() != chain.SepoliaID {
+		info.Exchange = map[string]string{}
+	}
+	return info, nil
 }
 
 func (s *Service) Create(password string) (*CreateResponse, error) {
@@ -125,7 +156,19 @@ func (s *Service) Backup(password string) (json.RawMessage, error) {
 	return s.keystore.Backup(password)
 }
 
-func (s *Service) Token(ctx context.Context, contract string) (*TokenInfo, error) {
+func (s *Service) ImportKeystore(data json.RawMessage, password, newPassword string) (*ImportResponse, error) {
+	s.sendMu.Lock()
+	defer s.sendMu.Unlock()
+	return s.keystore.ImportKeystore(data, password, newPassword)
+}
+
+func (s *Service) ChangePassword(password, newPassword string) error {
+	s.sendMu.Lock()
+	defer s.sendMu.Unlock()
+	return s.keystore.ChangePassword(password, newPassword)
+}
+
+func (s *Service) Token(ctx context.Context, contract, spender string) (*TokenInfo, error) {
 	if !s.keystore.Exists() {
 		return nil, ErrWalletNotFound
 	}
@@ -150,16 +193,43 @@ func (s *Service) Token(ctx context.Context, contract string) (*TokenInfo, error
 		return nil, err
 	}
 
-	return &TokenInfo{
+	info := &TokenInfo{
 		Contract:   contractAddr.Hex(),
 		Symbol:     sym,
 		Decimals:   dec,
 		Balance:    FormatUnits(bal, dec),
 		BalanceRaw: bal.String(),
-	}, nil
+	}
+	trustedSymbol, trustedDecimals, trusted := trustedEVMToken(s.client.ChainID(), contractAddr)
+	if trusted {
+		if sym != trustedSymbol || dec != trustedDecimals {
+			return nil, errors.New("RPC 回傳的代幣資料與內建登錄不符")
+		}
+		info.Trusted = true
+	}
+	if spender != "" {
+		address, err := ValidateAddress(spender)
+		if err != nil {
+			return nil, err
+		}
+		allowance, err := QueryERC20Allowance(ctx, s.client, contractAddr, ownerAddr, address)
+		if err != nil {
+			return nil, err
+		}
+		info.Spender, info.Allowance, info.AllowanceRaw = address.Hex(), FormatUnits(allowance, dec), allowance.String()
+	}
+	return info, nil
 }
 
 func (s *Service) Quote(ctx context.Context, req *QuoteRequest) (*QuoteResponse, error) {
+	command, err := ParseQuoteRequest(req)
+	if err != nil {
+		return nil, err
+	}
+	return s.QuoteCommand(ctx, command)
+}
+
+func (s *Service) QuoteCommand(ctx context.Context, command QuoteCommand) (*QuoteResponse, error) {
 	s.sendMu.Lock()
 	defer s.sendMu.Unlock()
 	if s.storageFault.Load() {
@@ -169,6 +239,26 @@ func (s *Service) Quote(ctx context.Context, req *QuoteRequest) (*QuoteResponse,
 		return nil, ErrWalletNotFound
 	}
 
+	if command.Action == ActionSpeedup || command.Action == ActionCancel {
+		bound, err := s.replacementQuote(ctx, command)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.rollupFee(ctx, bound, true); err != nil {
+			return nil, err
+		}
+		if err := s.quotes.Add(bound); err != nil {
+			return nil, err
+		}
+		return bound.ToResponse(), nil
+	}
+
+	if s.client.ChainID() != chain.SepoliaID {
+		switch command.Action {
+		case ActionWrap, ActionUnwrap, ActionSwap:
+			return nil, errors.New("此網路支援原生幣與 ERC-20 收付款；兌換目前只配置 Ethereum Sepolia")
+		}
+	}
 	// Single outstanding tx constraint: block new quotes while a transaction is in flight
 	if s.journal.HasInFlightTx() {
 		return nil, ErrTxInFlight
@@ -180,11 +270,17 @@ func (s *Service) Quote(ctx context.Context, req *QuoteRequest) (*QuoteResponse,
 	}
 	fromAddr := common.HexToAddress(addrStr)
 
-	bound, err := CreateQuote(ctx, s.client, fromAddr, req)
+	bound, err := CreateQuote(ctx, s.client, fromAddr, command)
 	if err != nil {
 		return nil, err
 	}
 
+	if command.Action == ActionETH {
+		bound.Symbol = s.client.NativeSymbol()
+	}
+	if err := s.rollupFee(ctx, bound, true); err != nil {
+		return nil, err
+	}
 	if err := s.quotes.Add(bound); err != nil {
 		return nil, err
 	}
@@ -201,15 +297,7 @@ func (s *Service) Send(ctx context.Context, quoteID, password string) (*SendResp
 	}
 	// Double-click / retry of same quoteID: return existing record without re-signing
 	if existing := s.journal.FindByQuoteID(quoteID); existing != nil {
-		return &SendResponse{
-			Hash:      existing.Hash,
-			State:     existing.State,
-			To:        existing.To,
-			Amount:    existing.Amount,
-			Symbol:    existing.Symbol,
-			Action:    existing.Action,
-			CreatedAt: existing.CreatedAt.Format(time.RFC3339),
-		}, nil
+		return sendResponseFromRecord(existing, existing.State), nil
 	}
 
 	quote, err := s.quotes.Get(quoteID)
@@ -217,7 +305,7 @@ func (s *Service) Send(ctx context.Context, quoteID, password string) (*SendResp
 		return nil, err
 	}
 
-	if s.journal.HasInFlightTx() {
+	if quote.ReplacementHash == "" && s.journal.HasInFlightTx() {
 		return nil, ErrTxInFlight
 	}
 
@@ -240,11 +328,25 @@ func (s *Service) Send(ctx context.Context, quoteID, password string) (*SendResp
 	}
 
 	currentNonce, err := s.client.PendingNonceAt(ctx, quote.From)
+	if quote.ReplacementHash != "" {
+		if len(s.journal.NonceRecords(quote.Nonce)) != quote.ReplacementCount {
+			return nil, ErrQuoteExpired
+		}
+		currentNonce, err = s.client.NonceAt(ctx, quote.From)
+		if err == nil && (currentNonce > quote.Nonce || s.journal.NonceMined(quote.Nonce)) {
+			return nil, ErrNonceMismatch
+		}
+		currentNonce = quote.Nonce
+	}
 	if err != nil {
 		return nil, err
 	}
 	if currentNonce != quote.Nonce {
 		return nil, ErrNonceMismatch
+	}
+
+	if err := s.rollupFee(ctx, quote, false); err != nil {
+		return nil, err
 	}
 
 	// Verify ETH balance
@@ -283,12 +385,13 @@ func (s *Service) Send(ctx context.Context, quoteID, password string) (*SendResp
 			return nil, ErrApprovalRace
 		}
 	}
-	if quote.Action == "wrap" || quote.Action == "unwrap" || quote.Action == "swap" {
+	switch quote.Action {
+	case "wrap", "unwrap", "swap":
 		if err := RecheckExchange(ctx, s.client, quote); err != nil {
 			return nil, err
 		}
 	}
-	if quote.Action == "transfer" || quote.Action == "approve" {
+	if quote.Action == "transfer" || quote.Action == "approve" || quote.ReplacementERC20 {
 		symbol, decimals, err := QueryERC20Metadata(ctx, s.client, quote.Contract)
 		if err != nil {
 			return nil, err
@@ -306,9 +409,24 @@ func (s *Service) Send(ctx context.Context, quoteID, password string) (*SendResp
 	if !time.Now().Before(quote.ExpiresAt) {
 		return nil, ErrQuoteExpired
 	}
+	if quote.ReplacementHash != "" {
+		gas, err := s.client.EstimateGas(ctx, ethereum.CallMsg{From: quote.From, To: &quote.TxTo, Value: quote.TxValue, Data: quote.Data, GasFeeCap: quote.MaxFeePerGas, GasTipCap: quote.MaxPriorityFeePerGas})
+		if err != nil {
+			return nil, err
+		}
+		if gas > quote.GasLimit {
+			return nil, errors.New("交易需要更多 Gas，請重新預估")
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, chain.ErrTimeout
+	}
+	if !time.Now().Before(quote.ExpiresAt) {
+		return nil, ErrQuoteExpired
+	}
 	// Build EIP-1559 DynamicFeeTx
 	dynamicTx := &types.DynamicFeeTx{
-		ChainID:   big.NewInt(chain.SepoliaID),
+		ChainID:   big.NewInt(s.client.ChainID()),
 		Nonce:     quote.Nonce,
 		GasTipCap: quote.MaxPriorityFeePerGas,
 		GasFeeCap: quote.MaxFeePerGas,
@@ -318,7 +436,7 @@ func (s *Service) Send(ctx context.Context, quoteID, password string) (*SendResp
 		Data:      quote.Data,
 	}
 	tx := types.NewTx(dynamicTx)
-	signer := types.LatestSignerForChainID(big.NewInt(chain.SepoliaID))
+	signer := types.LatestSignerForChainID(big.NewInt(s.client.ChainID()))
 	signedTx, err := types.SignTx(tx, signer, key.PrivateKey)
 	if err != nil {
 		return nil, err
@@ -333,10 +451,10 @@ func (s *Service) Send(ctx context.Context, quoteID, password string) (*SendResp
 
 	now := time.Now().UTC()
 	record := &JournalRecord{
-		Hash:      txHash,
+		Hash:      TransactionHash(txHash),
 		QuoteID:   quote.ID,
 		State:     "pending",
-		To:        quote.To.Hex(),
+		To:        EVMAddress(quote.To.Hex()),
 		Amount:    quote.Amount,
 		AmountRaw: quote.AmountRaw.String(),
 		Symbol:    quote.Symbol,
@@ -359,14 +477,14 @@ func (s *Service) Send(ctx context.Context, quoteID, password string) (*SendResp
 
 	// Broadcast to RPC
 	broadcastErr := s.client.SendTransaction(ctx, signedTx)
-	newState := "submitted"
+	newState := JournalSubmitted
 	var errStr string
 	if broadcastErr != nil {
-		newState = "broadcast_unknown"
+		newState = JournalBroadcastUnknown
 		errStr = broadcastErr.Error()
 	}
 
-	updated, err := s.journal.UpdateStateAtomicIfVersion(txHash, baseVersion, newState, "", "", errStr)
+	updated, err := s.journal.UpdateStateAtomicIfVersion(txHash, baseVersion, string(newState), "", "", errStr)
 	if err != nil {
 		s.storageFault.Store(true)
 		return nil, err
@@ -375,26 +493,10 @@ func (s *Service) Send(ctx context.Context, quoteID, password string) (*SendResp
 	if !updated {
 		latest := s.journal.FindByHash(txHash)
 		if latest != nil {
-			return &SendResponse{
-				Hash:      latest.Hash,
-				State:     latest.State,
-				To:        latest.To,
-				Amount:    latest.Amount,
-				Symbol:    latest.Symbol,
-				Action:    latest.Action,
-				CreatedAt: latest.CreatedAt.Format(time.RFC3339),
-			}, nil
+			return sendResponseFromRecord(latest, latest.State), nil
 		}
 	}
-	return &SendResponse{
-		Hash:      txHash,
-		State:     newState,
-		To:        record.To,
-		Amount:    record.Amount,
-		Symbol:    record.Symbol,
-		Action:    record.Action,
-		CreatedAt: now.Format(time.RFC3339),
-	}, nil
+	return sendResponseFromRecord(record, newState), nil
 }
 
 func (s *Service) Retry(ctx context.Context, hash string) (*SendResponse, error) {
@@ -410,16 +512,11 @@ func (s *Service) Retry(ctx context.Context, hash string) (*SendResponse, error)
 		return nil, chain.ErrNotFound
 	}
 
-	if record.State == "succeeded" || record.State == "reverted" {
-		return &SendResponse{
-			Hash:      record.Hash,
-			State:     record.State,
-			To:        record.To,
-			Amount:    record.Amount,
-			Symbol:    record.Symbol,
-			Action:    record.Action,
-			CreatedAt: record.CreatedAt.Format(time.RFC3339),
-		}, nil
+	if s.journal.NonceMined(record.Nonce) {
+		if record.State != "succeeded" && record.State != "reverted" {
+			record.State = "replaced"
+		}
+		return sendResponseFromRecord(record, record.State), nil
 	}
 
 	baseVersion := record.Version
@@ -435,50 +532,34 @@ func (s *Service) Retry(ctx context.Context, hash string) (*SendResponse, error)
 	}
 
 	// Sepolia check
-	if tx.Hash().Hex() != record.Hash {
+	if tx.Hash().Hex() != string(record.Hash) {
 		return nil, errors.New("儲存的交易雜湊不符")
 	}
-	if tx.ChainId().Cmp(big.NewInt(chain.SepoliaID)) != 0 {
+	if tx.ChainId().Cmp(big.NewInt(s.client.ChainID())) != 0 {
 		return nil, ErrWrongChain
 	}
 
 	broadcastErr := s.client.SendTransaction(ctx, &tx)
-	newState := "submitted"
+	newState := JournalSubmitted
 	var errStr string
 	if broadcastErr != nil {
-		newState = "broadcast_unknown"
+		newState = JournalBroadcastUnknown
 		errStr = broadcastErr.Error()
 	}
 
-	updated, err := s.journal.UpdateStateAtomicIfVersion(record.Hash, baseVersion, newState, "", "", errStr)
+	updated, err := s.journal.UpdateStateAtomicIfVersion(string(record.Hash), baseVersion, string(newState), "", "", errStr)
 	if err != nil {
 		s.storageFault.Store(true)
 		return nil, err
 	}
 	if !updated {
-		latest := s.journal.FindByHash(record.Hash)
+		latest := s.journal.FindByHash(string(record.Hash))
 		if latest != nil {
-			return &SendResponse{
-				Hash:      latest.Hash,
-				State:     latest.State,
-				To:        latest.To,
-				Amount:    latest.Amount,
-				Symbol:    latest.Symbol,
-				Action:    latest.Action,
-				CreatedAt: latest.CreatedAt.Format(time.RFC3339),
-			}, nil
+			return sendResponseFromRecord(latest, latest.State), nil
 		}
 	}
 
-	return &SendResponse{
-		Hash:      record.Hash,
-		State:     newState,
-		To:        record.To,
-		Amount:    record.Amount,
-		Symbol:    record.Symbol,
-		Action:    record.Action,
-		CreatedAt: record.CreatedAt.Format(time.RFC3339),
-	}, nil
+	return sendResponseFromRecord(record, newState), nil
 }
 
 func (s *Service) History(ctx context.Context) (*HistoryResponse, error) {
@@ -486,19 +567,25 @@ func (s *Service) History(ctx context.Context) (*HistoryResponse, error) {
 	defer s.historyMu.Unlock()
 	// Refresh recent and outstanding records without treating RPC errors as transaction failure.
 	refreshError := ""
-	for _, item := range s.journal.RefreshItems() {
+	items := s.journal.RefreshItems()
+	start := s.historyOffset
+	for i := 0; i < len(items); i += 1 {
+		index := (start + i) % len(items)
+		item := items[index]
 		if ctx.Err() != nil {
 			refreshError = "部分交易未能完成鏈上查核；以下保留本機最後紀錄，請稍後更新。"
 			break
 		}
 		txInfo, err := s.client.Transaction(ctx, item.Hash)
+		s.historyOffset = (index + 1) % len(items)
 		if ctx.Err() != nil {
 			refreshError = "部分交易未能完成鏈上查核；以下保留本機最後紀錄，請稍後更新。"
 			break
 		}
 		if err == nil && txInfo != nil {
-			if txInfo.State == "succeeded" || txInfo.State == "reverted" || txInfo.State == "reorg_detected" || txInfo.State == "pending" || txInfo.State == "receipt_unavailable" {
-				if _, err := s.journal.UpdateStateAtomicIfVersion(item.Hash, item.Version, txInfo.State, txInfo.Confirmations, txInfo.FeeETH, ""); err != nil {
+			switch txInfo.State {
+			case "succeeded", "reverted", "reorg_detected", "pending", "receipt_unavailable":
+				if _, err := s.journal.UpdateStateAtomicIfVersion(item.Hash, item.Version, txInfo.State, txInfo.Confirmations, txInfo.FeeETH, "", txInfo.Finalized); err != nil {
 					s.storageFault.Store(true)
 					return nil, err
 				}
@@ -522,8 +609,26 @@ func (s *Service) History(ctx context.Context) (*HistoryResponse, error) {
 		refreshError = "部分交易未能完成鏈上查核；以下保留本機最後紀錄，請稍後更新。"
 	}
 
+	if _, err := s.journal.ArchiveFinalized(); err != nil {
+		s.storageFault.Store(true)
+		return nil, err
+	}
 	return &HistoryResponse{
 		Transactions: s.journal.ListHistory(),
 		RefreshError: refreshError,
 	}, nil
+}
+
+// Linked networks share one keystore manager, while quotes and transaction storage remain isolated.
+func NewLinkedService(client *chain.Client, walletDir string, primary *Service) (*Service, error) {
+	service, err := NewService(client, walletDir)
+	if err != nil {
+		return nil, err
+	}
+	service.keystore = primary.keystore
+	service.catalog = primary.catalog
+	if service.catalog == nil {
+		service.catalog = primary
+	}
+	return service, nil
 }

@@ -172,3 +172,25 @@ func TestExchangeRechecksBeforeSigning(t *testing.T) {
 		})
 	}
 }
+
+func TestExchangeAllowancePreview(t *testing.T) {
+	s, state := guardedFixture(t)
+	state.allowance = big.NewInt(1230000)
+	info, err := s.Token(context.Background(), USDCAddress, RouterAddress)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.AllowanceRaw != "1230000" || info.Allowance != "1.23" || info.Spender != common.HexToAddress(RouterAddress).Hex() {
+		t.Fatalf("incorrect allowance: %+v", info)
+	}
+	if len(state.raws) != 0 {
+		t.Fatal("preview broadcast a transaction")
+	}
+	if _, err := s.Token(context.Background(), USDCAddress, "invalid"); err == nil {
+		t.Fatal("invalid spender accepted")
+	}
+	info, err = s.Token(context.Background(), USDCAddress, "")
+	if err != nil || info.AllowanceRaw != "" {
+		t.Fatalf("ordinary token query changed: %+v %v", info, err)
+	}
+}

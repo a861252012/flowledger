@@ -24,6 +24,31 @@ const erc20ABIJSON = `[
 
 var erc20ABI abi.ABI
 
+func trustedEVMToken(chainID int64, contract common.Address) (string, int, bool) {
+	if chainID != 11155111 {
+		return "", 0, false
+	}
+	symbol, decimals, err := exchangeToken(contract)
+	return symbol, decimals, err == nil
+}
+
+// ParseRawTokenAmount parses the exact uint256 value placed in custom-token calldata.
+func ParseRawTokenAmount(value string) (*big.Int, error) {
+	if value == "" || len(value) > 78 {
+		return nil, errors.New("自訂代幣必須輸入最小單位整數")
+	}
+	for _, char := range value {
+		if char < '0' || char > '9' {
+			return nil, errors.New("自訂代幣最小單位只能是十進位整數")
+		}
+	}
+	amount, ok := new(big.Int).SetString(value, 10)
+	if !ok || amount.Cmp(maxUint256) > 0 {
+		return nil, errors.New("自訂代幣最小單位超出 uint256 範圍")
+	}
+	return amount, nil
+}
+
 func init() {
 	var err error
 	erc20ABI, err = abi.JSON(strings.NewReader(erc20ABIJSON))

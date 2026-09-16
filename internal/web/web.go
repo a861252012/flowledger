@@ -28,10 +28,19 @@ func New(client *chain.Client, walletService ...*wallet.Service) (http.Handler, 
 		return nil, err
 	}
 	mux := http.NewServeMux()
+	registerObservation(mux, client)
+	showcase, err := template.ParseFS(assets, "templates/showcase.html")
+	if err != nil {
+		return nil, err
+	}
+	mux.HandleFunc("GET /showcase", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_ = showcase.Execute(w, nil)
+	})
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(static)))
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_ = page.Execute(w, nil)
+		_ = page.Execute(w, map[string]string{"Native": client.NativeSymbol()})
 	})
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		respond(w, map[string]string{"status": "ok", "mode": "wallet"}, nil)
@@ -40,30 +49,34 @@ func New(client *chain.Client, walletService ...*wallet.Service) (http.Handler, 
 		ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 		defer cancel()
 		result, err := client.Network(ctx)
-		respond(w, result, err)
+		respond(w, newEVMNetworkResponse(result), err)
 	})
 	mux.HandleFunc("GET /api/balance", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 		defer cancel()
 		result, err := client.Balance(ctx, strings.TrimSpace(r.URL.Query().Get("address")))
-		respond(w, result, err)
+		respond(w, newEVMBalanceResponse(result), err)
 	})
 	mux.HandleFunc("GET /api/transactions/{hash}", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 		defer cancel()
 		result, err := client.Transaction(ctx, r.PathValue("hash"))
-		respond(w, result, err)
+		respond(w, newEVMTransactionResponse(result), err)
 	})
 	if len(walletService) > 0 && walletService[0] != nil {
 		registerWalletRoutes(mux, walletService[0])
 	}
+	return secureHeaders(mux), nil
+}
+
+func secureHeaders(mux http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 		mux.ServeHTTP(w, r)
-	}), nil
+	})
 }
 
 func respond(w http.ResponseWriter, result any, err error) {
@@ -83,4 +96,32 @@ func respond(w http.ResponseWriter, result any, err error) {
 		return
 	}
 	_ = json.NewEncoder(w).Encode(result)
+}
+
+// NormalizeWorkspaceRedirect checks if a workspace request path is missing a required trailing slash
+// and returns the canonical redirect path if needed.
+func NormalizeWorkspaceRedirect(path string) (string, bool) {
+	if path == "/solana" {
+		return "/solana/", true
+	}
+	if path == "/tron" {
+		return "/tron/", true
+	}
+	if after, ok := strings.CutPrefix(path, "/accounts/"); ok {
+		trimmed := after
+		if !strings.Contains(trimmed, "/") {
+			if trimmed != "" {
+				return path + "/", true
+			}
+			return "", false
+		}
+		pieces := strings.SplitN(trimmed, "/", 2)
+		if len(pieces) == 2 && strings.HasPrefix(pieces[1], "net/") {
+			slugRest := strings.TrimPrefix(pieces[1], "net/")
+			if slugRest != "" && !strings.Contains(slugRest, "/") {
+				return path + "/", true
+			}
+		}
+	}
+	return "", false
 }

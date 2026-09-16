@@ -1,0 +1,1 @@
+{"name":"flowledger-browser-tests","private":true,"scripts":{"test":"node browser.cjs"},"devDependencies":{"playwright":"1.58.2"}}

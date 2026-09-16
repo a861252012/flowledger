@@ -1,0 +1,270 @@
+// UI contract tests. Every API response is a local fixture; no real wallet or RPC is accessed.
+const { chromium } = require('playwright');
+const http = require('node:http');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const assert = require('node:assert/strict');
+const root = path.resolve(__dirname, '../..');
+const address = '0x1111111111111111111111111111111111111111';
+const weth = '0xfff9976782d46cc05630d1f6ebab18b2324d6b14';
+const usdc = '0x1c7d4b196cb0c7b01d743fbc6116a902379c7238';
+const customToken = '0x4444444444444444444444444444444444444444';
+const router = '0x3bfa4769fb09eefc5a80d6e87c3b9c650f7ae48e';
+let accountFixtures = [{id:'',name:'主要錢包',address,archived:false}];
+let accountWrites = 0, accountFailure = false;
+let exists = true, balanceFailure = false, loseSendResponse = false, history = [], sent = [], quotes = new Map(), allowances = new Map();
+let tronExists=false,tronHistory=[],tronSends=0;const tronAddress='TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH';
+let solExists = false, solHistory = [], solSends = 0;
+const solAddress = 'CghaUzuHcKaSKQG3UtoZzMafEPmnRk1V6LUN2Hdp8XWa';
+const networks = {base:84532,optimism:11155420,arbitrum:421614,polygon:80002};
+const server = http.createServer(async (req,res)=>{
+ try {
+  const url = new URL(req.url,'http://localhost');
+  const chainId = networks[url.pathname.match(/^\/net\/([^/]+)/)?.[1]] || 11155111;
+  const accountID = url.pathname.match(/^\/accounts\/([^/]+)/)?.[1] || '';
+  const pathname = url.pathname.replace(/^\/accounts\/[^/]+/,'').replace(/^\/net\/[^/]+/,'');
+  res.setHeader('Content-Type','application/json');
+  let body='';for await(const chunk of req)body+=chunk;body=body?JSON.parse(body):{};
+  const respond = data => res.end(JSON.stringify(data));
+  if(pathname==='/showcase'){res.setHeader('Content-Type','text/html');return res.end(await fs.readFile(path.join(root,'internal/web/templates/showcase.html')));}
+  if(pathname==='/tron/'){res.setHeader('Content-Type','text/html');return res.end(await fs.readFile(path.join(root,'internal/web/templates/tron.html')));}
+  if(pathname==='/tron/api/status')return respond({exists:tronExists,address:tronAddress,csrfToken:'fixture'});
+  if(pathname==='/tron/api/create'){tronExists=true;return respond({address:tronAddress});}
+  if(pathname==='/tron/api/balance')return respond({trx:'100',active:true,bandwidth:600,energy:0});
+  if(pathname==='/tron/api/history')return respond(tronHistory);
+  if(pathname==='/tron/api/token')return respond({contract:tronAddress,symbol:'TEST',balance:'1',decimals:6});
+  if(pathname==='/tron/api/quote')return respond({...body,id:'tron-quote',symbol:body.contract?'TEST':'TRX',feeTrx:'0.3',feeLimitTrx:'0',energy:0,bandwidth:300,expiresAt:new Date(Date.now()+60000).toISOString()});
+  if(pathname==='/tron/api/send'){tronSends += 1;tronHistory=[{signature:'1'.repeat(64),to:tronAddress,amount:'0.000001',symbol:'TRX',feeTrx:'0.001',state:'finalized',finalized:true}];return respond(tronHistory[0]);}
+  if(pathname==='/solana/'){res.setHeader('Content-Type','text/html');return res.end(await fs.readFile(path.join(root,'internal/web/templates/solana.html')));}
+  if(pathname==='/solana/api/status')return respond({exists:solExists,address:solAddress,csrfToken:'fixture'});
+  if(pathname==='/solana/api/create'){solExists=true;return respond({address:solAddress});}
+  if(pathname==='/solana/api/balance'){if(balanceFailure){res.statusCode=502;return respond({error:'fixture Devnet unavailable'});}return respond({sol:'0.1',slot:100});}
+  if(pathname==='/solana/api/history')return respond(solHistory);
+  if(pathname==='/solana/api/quote')return respond({...body,id:'sol-quote',feeSol:'0.000005',lastValidBlockHeight:200,expiresAt:new Date(Date.now()+60000).toISOString()});
+  if(pathname==='/solana/api/send'){solSends += 1;solHistory=[{signature:'1'.repeat(88),to:solAddress,amount:'0.000001',state:'finalized',finalized:true}];return respond(solHistory[0]);}
+  if(url.pathname.startsWith('/static/')){res.setHeader('Content-Type',url.pathname.endsWith('.css')?'text/css':'text/javascript');return res.end(await fs.readFile(path.join(root,'internal/web',url.pathname)));}
+  if(pathname==='/' || pathname===''){res.setHeader('Content-Type','text/html');return res.end((await fs.readFile(path.join(root,'internal/web/templates/index.html'),'utf8')).replaceAll('{{.Native}}',chainId===80002?'POL':'ETH'));}
+  if(pathname==='/api/faucet' && req.method==='GET')return respond({enabled:true,csrfToken:'fixture'});
+  if(pathname==='/api/faucet' && req.method==='POST'){
+   assert.equal(req.headers['x-wallet-csrf'],'fixture'); assert.equal(body.address,address);
+   assert.ok(['native','usdc'].includes(body.asset));
+   return respond({hash:'0x'+'f'.repeat(64),state:'submitted'});
+  }
+  if(pathname==='/api/faucet/tron'){res.statusCode=400;return respond({error:'Shasta 測試幣庫存不足'});}
+  if(pathname==='/api/faucet/solana'){res.statusCode=502;return respond({error:'Devnet 空投限流，請稍後再試'});}
+  if(pathname==='/api/network')return respond({chainId,block:'100',blockTime:new Date().toISOString(),checkedAt:new Date().toISOString()});
+  if(pathname==='/api/wallet')return respond({exists:accountID ? Boolean(accountFixtures.find(item=>item.id===accountID)?.address) : exists,address,chainId,csrfToken:'fixture',exchange:chainId===11155111?{weth,usdc,router}:{}});
+  if(pathname==='/api/wallet/accounts' && req.method==='GET')return respond(accountFixtures);
+  if(pathname==='/api/wallet/accounts' && req.method==='POST'){
+   accountWrites++;assert.equal(req.headers['x-wallet-csrf'],'fixture');
+   const item={id:'a'.repeat(32),name:body.name,address:'',archived:false};accountFixtures.push(item);return respond(item);
+  }
+  if(pathname==='/api/wallet/accounts/update'){
+   accountWrites++;assert.equal(req.headers['x-wallet-csrf'],'fixture');
+   if(accountFailure){res.statusCode=400;return respond({error:'fixture 無法儲存'});}
+   const item=accountFixtures.find(item=>item.id===body.id);Object.assign(item,body);return respond(item);
+  }
+  if(pathname==='/api/balance'){if(balanceFailure){res.statusCode=502;return respond({error:'fixture RPC unavailable'});}return respond({address,eth:'1',wei:'1000000000000000000',block:'100',checkedAt:new Date().toISOString()});}
+  if(pathname==='/api/wallet/history')return respond({transactions:history});
+  if(pathname==='/api/wallet/activity')return respond({page:1,pages:1,totalTransactions:0,transactions:[],totals:[]});
+  if(pathname==='/api/wallet/scan')return respond({enabled:false,start:90,next:91,finalized:100,tokens:[]});
+  if(pathname==='/api/wallet/token'||pathname==='/api/watch/token'){
+   const contract=(body.contract||url.searchParams.get('contract')).toLowerCase();
+   const custom=contract===customToken,decimals=contract===usdc?6:18;
+   return respond({contract,symbol:custom?'CUSTOM':contract===usdc?'USDC':'WETH',decimals,balance:'1',balanceRaw:10n**BigInt(decimals)+'',allowanceRaw:allowances.get(contract)||'0',allowance:'0',trustedMetadata:!custom});
+  }
+  if(pathname==='/api/wallet/exchange/pools')return respond({bestFee:500,symbol:'USDC',pools:[{fee:100,error:'fixture unavailable'},{fee:500,output:'0.2',outputRaw:'200000'},{fee:3000,output:'0.1',outputRaw:'100000'},{fee:10000,error:'no pool'}]});
+  if(pathname==='/api/wallet/quote'){
+   const id=String(quotes.size+1);quotes.set(id,body);
+   return respond({...body,id,from:address,symbol:body.action==='wrap'?'ETH':'USDC',amountRaw:'1',maxFeeEth:'0.00001',totalEth:body.amount,expiresAt:new Date(Date.now()+120000).toISOString(),nonce:'0',data:'0x',gasLimit:'21000',maxFeePerGas:'1',maxPriorityFeePerGas:'1'});
+  }
+  if(pathname==='/api/wallet/send'){
+   const q=quotes.get(body.quoteId);assert.ok(q);sent.push(q.action);
+   if(q.action==='approve')allowances.set(q.contract,BigInt(Math.round(Number(q.amount)*10**(q.contract===usdc?6:18))).toString());
+   const tx={...q,quoteId:body.quoteId,hash:'0x'+String(sent.length).padStart(64,'0'),state:'succeeded',createdAt:new Date().toISOString(),symbol:'ETH',confirmations:'1'};history.push(tx);if(loseSendResponse){loseSendResponse=false;res.statusCode=502;return respond({error:'fixture proxy lost upstream response after broadcast'});}return respond(tx);
+  }
+  if(pathname.startsWith('/api/transactions/'))return respond({hash:pathname.split('/').pop(),state:'succeeded',block:'100',blockHash:'0x'+'1'.repeat(64),finalized:true,confirmations:'2',feeEth:'0.000005',checkedAt:new Date().toISOString()});
+  if(pathname==='/api/watch/activity')return respond({state:'succeeded',hash:url.searchParams.get('hash'),movements:[{kind:'receive',asset:weth,raw:'1000000000000',evidence:'fixture Transfer log'}]});
+  if(pathname==='/api/diagnostics')return respond({chainId,network:{block:'100'},rpc:{requests:20,transportFailures:1,failovers:1,activeEndpoint:2,endpointCount:2,lastRequestMs:5}});
+  res.statusCode=404;respond({error:'unhandled fixture path: '+pathname});
+ }catch(error){res.statusCode=500;res.end(JSON.stringify({error:String(error)}));}
+});
+(async()=>{
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+ const base='http://127.0.0.1:'+server.address().port;
+ const browser=await chromium.launch({headless:true});
+ const context=await browser.newContext({viewport:{width:1280,height:900}});
+ await context.route('**/*',route=>new URL(route.request().url()).origin===base?route.continue():route.abort());
+ const page=await context.newPage(), errors=[];page.on('pageerror',error=>errors.push(String(error)));
+ async function view(id){await page.evaluate(id=>{location.hash=id;},id);await page.waitForFunction(id=>document.body.dataset.view===id,id);}
+ try {
+  for(const [slug,id] of Object.entries(networks)){
+   await page.goto(base+'/net/'+slug+'/');await page.locator('#wallet-dashboard').waitFor({state:'visible'});
+   assert.equal(await page.locator('#network-select').inputValue(),'/net/'+slug);
+   assert.equal(await page.locator('#exchange-panel').isVisible(),false);
+   await page.waitForFunction(id=>document.querySelector('#chain-id').textContent===String(id),id);
+   if(id===80002){await page.waitForFunction(()=>document.querySelector('#wallet-balance').textContent.includes('POL'));assert.ok((await page.locator('#send-asset').textContent()).includes('POL'));assert.ok((await page.locator('#receive-network').textContent()).includes('POL'));await view('watch-panel');await page.locator('#watch-address').fill(address);await page.locator('#watch-form button[type=submit]').click();await page.waitForFunction(()=>document.querySelector('#watch-result').textContent.includes('1 POL'));}
+
+  }
+  await page.goto(base);await page.locator('#wallet-dashboard').waitFor({state:'visible'});
+  await page.locator('#manage-accounts').click();
+  await page.locator('#add-account').click();
+  await page.locator('#account-name').fill('可取消');
+  await page.locator('#cancel-account-edit').click();assert.equal(accountWrites,0);
+  await page.locator('#add-account').click();await page.locator('#account-name').fill('收款測試');await page.locator('#save-account').click();
+  await page.waitForURL('**/accounts/'+ 'a'.repeat(32)+'/');
+  await page.locator('#wallet-setup').waitFor({state:'visible'});assert.equal(accountWrites,1);
+  await page.goto(base);await page.locator('#wallet-dashboard').waitFor({state:'visible'});
+  await page.locator('#manage-accounts').click();
+  const accountRow=()=>page.locator('.account-row').filter({hasText:'收款測試'});
+  await accountRow().getByRole('button',{name:'更名',exact:true}).click();
+  accountFailure=true;await page.locator('#account-name').fill('改名測試');await page.locator('#save-account').click();
+  await page.waitForFunction(()=>document.querySelector('#account-feedback').textContent.includes('無法儲存'));
+  assert.equal(await page.locator('#account-editor').isVisible(),true);accountFailure=false;
+  await page.locator('#account-name').fill('<img src=x onerror=alert(1)>');await page.locator('#save-account').click();
+  await page.locator('#account-list-view').waitFor({state:'visible'});assert.equal(await page.locator('#account-list img').count(),0);
+  const renamedRow=()=>page.locator('.account-row').filter({hasText:'<img src=x onerror=alert(1)>'});
+  await renamedRow().getByRole('button',{name:'封存',exact:true}).click();await page.locator('#cancel-account-edit').click();
+  assert.equal(accountFixtures[1].archived,false);
+  await renamedRow().getByRole('button',{name:'封存',exact:true}).click();await page.locator('#save-account').click();
+  await page.waitForFunction(()=>document.querySelectorAll('#account-select option').length===1);
+  await page.locator('#show-archived-accounts').check();
+  await renamedRow().getByRole('button',{name:'還原',exact:true}).click();await page.locator('#save-account').click();
+  await page.waitForFunction(()=>document.querySelectorAll('#account-select option').length===2);
+  await page.setViewportSize({width:390,height:844});
+  assert.ok(await page.evaluate(()=>document.querySelector('#account-manager').getBoundingClientRect().width<=innerWidth));
+  await page.screenshot({path:'/tmp/flowledger-wallet-manager-mobile.png'});
+  await page.keyboard.press('Escape');assert.equal(await page.locator('#account-manager').isVisible(),false);
+  await page.setViewportSize({width:1280,height:900});
+  await page.locator('#tokens-panel > details > summary').click();await page.locator('#token-contract').fill(customToken);await page.locator('#token-form button').click();await page.waitForFunction(token=>[...document.querySelector('#send-asset').options].some(option=>option.value===token),customToken);
+  await view('send-panel');await page.locator('#send-asset').selectOption(customToken);assert.equal(await page.locator('#send-amount-label').textContent(),'最小單位數量（整數）');await page.locator('#send-to').fill(address);await page.locator('#send-amount').fill('123');await page.locator('#send-form button').click();await page.locator('#send-confirmation').waitFor({state:'visible'});assert.equal([...quotes.values()].at(-1).amountRaw,'123');assert.equal([...quotes.values()].at(-1).amount,'');await page.locator('#cancel-send').click();
+  await view('test-funding-panel');await page.locator('#claim-native').click();
+  await page.waitForFunction(()=>document.querySelector('#test-funding-status').textContent.includes('鏈上執行成功'));
+  assert.ok((await page.locator('#test-funding-status a').getAttribute('href')).endsWith('f'.repeat(64)));
+  await view('contacts-panel');await page.locator('#contact-label').fill('<img src=x onerror=alert(1)>');await page.locator('#contact-address').fill(address);await page.locator('#contact-form button').click();
+  assert.equal(await page.locator('#contacts-list img').count(),0);
+  await view('send-panel');await page.locator('#contact-select').selectOption(address);assert.equal(await page.locator('#send-to').inputValue(),address);
+  await view('watch-panel');await page.locator('#watch-address').fill(address);await page.locator('#watch-form button[type=submit]').click();await page.waitForFunction(()=>document.querySelector('#watch-result').textContent.includes('1 ETH'));
+  balanceFailure=true;await page.locator('#watch-form button[type=submit]').click();await page.waitForFunction(()=>document.querySelector('#watch-result').textContent.includes('unavailable'));balanceFailure=false;
+  await view('exchange-panel');await page.locator('#exchange-action').selectOption('eth-usdc');await page.locator('#exchange-amount').fill('0.000001');
+  async function step(){await page.locator('#exchange-submit').click();await page.locator('#send-confirmation').waitFor({state:'visible'});await page.locator('#send-password').fill('fixture-password-only');await page.locator('#confirm-send-button').click();await page.locator('#send-confirmation').waitFor({state:'hidden'});await page.waitForFunction(()=>!document.querySelector('#refresh-wallet').disabled&&!document.querySelector('#exchange-workflow').textContent.includes('等待 0x'));}
+  await step();await step();await step();assert.deepEqual(sent,['wrap','approve','swap']);
+  assert.equal([...quotes.values()].find(q=>q.action==='swap').poolFee,500);
+  await view('history-panel');await page.locator('#history-search').fill('absent-query');assert.equal(await page.locator('#wallet-history .history-row').count(),0);
+  await page.locator('#history-search').fill('');assert.equal(await page.locator('#wallet-history .history-row').count(),3);
+  await view('exchange-panel');await page.locator('#flow-stop').click();await view('exchange-panel');await page.locator('#exchange-action').selectOption('usdc-eth');await page.locator('#exchange-amount').fill('0.001');
+  await step();await step();await step();assert.deepEqual(sent.slice(3),['approve','swap','unwrap']);
+  assert.equal([...quotes.values()].at(-1).amount,'0.000001000000000000');
+  await view('diagnostics-panel');await page.locator('#diagnostics-refresh').click();await page.waitForFunction(()=>document.querySelector('#diagnostics-result').textContent.includes('備援切換數'));
+  await page.locator('#diagnostic-hash').fill('0x'+'1'.repeat(64));await page.locator('#diagnose-tx').click();await page.waitForFunction(()=>document.querySelector('#diagnostic-tx').textContent.includes('已 finalized'));
+  await view('exchange-panel');await page.locator('#flow-stop').click();await view('exchange-panel');await page.locator('#exchange-action').selectOption('eth-usdc');await page.locator('#exchange-amount').fill('0.000001');loseSendResponse=true;
+  await page.locator('#exchange-submit').click();await page.locator('#send-confirmation').waitFor({state:'visible'});await page.locator('#send-password').fill('fixture-password-only');await page.locator('#confirm-send-button').click();await page.locator('#confirm-error').waitFor({state:'visible'});
+  await page.reload();await page.waitForFunction(()=>document.querySelector('#exchange-workflow').textContent.includes('查核授權並兌換'));
+  assert.equal(sent.filter(action=>action==='wrap').length,2,'lost response repeated wrap');
+  exists=false;await page.reload();await page.locator('#wallet-setup').waitFor({state:'visible'});await view('watch-panel');assert.equal(await page.locator('#watch-panel').isVisible(),true);
+  await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'mobile overflow');
+  await page.goto(base+'/solana/');await page.locator('#sol-setup').waitFor({state:'visible'});
+  await page.locator('#sol-mnemonic').fill('fixture mnemonic');await page.locator('#sol-password').fill('fixture-password-only');await page.locator('#sol-password-confirm').fill('fixture-password-only');await page.locator('#sol-create button').click();
+  await page.locator('#sol-dashboard').waitFor({state:'visible'});await page.waitForFunction(()=>document.querySelector('#sol-balance').textContent==='0.1 SOL');
+  await view('test-funding-panel');await page.locator('#sol-airdrop').click(); await page.waitForFunction(()=>document.querySelector('#sol-funding-status').textContent.includes('限流'));
+  assert.equal(await page.locator('#sol-airdrop').isEnabled(),true);
+  assert.equal(await page.locator('#sol-password').inputValue(),'');
+  await view('send-panel');await page.locator('#sol-self').click();await page.locator('#sol-transfer button').click();await page.locator('#sol-confirm').waitFor({state:'visible'});
+  assert.ok((await page.locator('#sol-quote').textContent()).includes('Solana Devnet'));assert.equal(solSends,0);
+  await page.locator('#sol-sign-password').fill('fixture-password-only');await page.locator('#sol-sign button[type=submit]').click();await page.locator('#sol-confirm').waitFor({state:'hidden'});
+  await page.waitForFunction(()=>document.querySelector('#sol-history').textContent.includes('終局確認'));assert.equal(solSends,1);assert.equal(await page.locator('#sol-sign-password').inputValue(),'');
+  balanceFailure=true;await view('overview');await page.locator('#sol-refresh').click();await page.waitForFunction(()=>document.querySelector('#sol-error').textContent.includes('Devnet unavailable'));assert.equal(await page.locator('#sol-balance').textContent(),'—');
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Solana mobile overflow');
+  balanceFailure=false;await page.goto(base+'/tron/');await page.locator('#tron-setup').waitFor({state:'visible'});
+  await page.locator('#tron-mnemonic').fill('fixture mnemonic');await page.locator('#tron-password').fill('fixture-password-only');await page.locator('#tron-password-confirm').fill('fixture-password-only');await page.locator('#tron-create button').click();
+  await page.locator('#tron-dashboard').waitFor({state:'visible'});await view('test-funding-panel');await page.locator('#tron-claim').click();await page.waitForFunction(()=>document.querySelector('#tron-funding-status').textContent.includes('庫存不足'));assert.equal(await page.locator('#tron-claim').isEnabled(),true);await page.waitForFunction(()=>document.querySelector('#tron-balance').textContent==='100 TRX');
+  await view('send-panel');await page.locator('#tron-contract').fill(tronAddress);await page.locator('#tron-token-query').click();await page.waitForFunction(()=>document.querySelector('#tron-token-info').textContent.includes('TEST'));
+  await page.locator('#tron-self').click();assert.equal(await page.locator('#tron-amount-label').textContent(),'數量');assert.equal(await page.locator('#tron-to').inputValue(),'');await page.locator('#tron-to').fill(tronAddress);await page.locator('#tron-transfer button[type=submit]').click();await page.locator('#tron-confirm').waitFor({state:'visible'});assert.equal(tronSends,0);assert.ok((await page.locator('#tron-quote').textContent()).includes('TRON Shasta'));
+  await page.locator('#tron-sign-password').fill('fixture-password-only');await page.locator('#tron-sign button[type=submit]').click();await page.locator('#tron-confirm').waitFor({state:'hidden'});await page.waitForFunction(()=>document.querySelector('#tron-history').textContent.includes('終局確認'));assert.equal(tronSends,1);assert.equal(await page.locator('#tron-sign-password').inputValue(),'');
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'TRON mobile overflow');
+  exists=true; await page.setViewportSize({width:1280,height:900});await page.goto(base);await page.locator('#wallet-dashboard').waitFor({state:'visible'});
+  await view('send-panel');await page.locator('#send-to').fill(address);await page.locator('#send-amount').fill('0.012345');
+  await page.locator('#language-select').selectOption('en');
+  await page.waitForFunction(()=>document.querySelector('#page-title').textContent==='Send');
+  assert.equal(await page.locator('#send-to').inputValue(),address);assert.equal(await page.locator('#send-amount').inputValue(),'0.012345');
+  assert.equal(await page.locator('#send-form button[type=submit]').textContent(),'Review transfer');
+  await page.locator('#theme-toggle').click();const theme=await page.locator('html').getAttribute('data-theme');
+  await page.reload();assert.equal(await page.locator('html').getAttribute('data-theme'),theme);assert.equal(await page.locator('#language-select').inputValue(),'en');
+  await page.locator('#send-to').fill(address);await page.locator('#send-amount').fill('0.012345');await page.locator('#send-form button[type=submit]').click();await page.locator('#send-confirmation').waitFor({state:'visible'});
+  await page.locator('#send-password').fill('fixture-secret-not-sent');
+  await page.evaluate(()=>window.FlowI18n.setLocale('zh-CN'));
+  assert.equal(await page.locator('#send-password').inputValue(),'fixture-secret-not-sent');assert.equal(await page.locator('#confirm-title').textContent(),'确认这笔交易');
+  await page.locator('#cancel-send').click();
+  await page.locator('#language-select').selectOption('zh-CN');await page.waitForFunction(()=>document.querySelector('#page-title').textContent==='发送资产');
+  await view('overview');assert.equal(await page.locator('#send-panel').isVisible(),false);assert.equal(await page.locator('#diagnostics-panel').isVisible(),false);assert.equal(await page.locator('#first-transaction').isVisible(),false);
+  await page.locator('#language-select').selectOption('en');
+  await page.setViewportSize({width:390,height:844});await page.locator('#menu-toggle').click();assert.equal(await page.locator('#menu-toggle').getAttribute('aria-expanded'),'true');
+  await page.waitForFunction(()=>document.querySelector('#app-sidebar').contains(document.activeElement));await page.keyboard.press('Escape');assert.equal(await page.locator('#menu-toggle').getAttribute('aria-expanded'),'false');
+  await page.locator('#menu-toggle').click();await page.locator('#app-sidebar a[href="#receive-panel"]').click();await page.locator('#receive-panel').waitFor({state:'visible'});assert.equal(await page.locator('#receive-panel').isVisible(),true);assert.equal(await page.locator('#menu-toggle').getAttribute('aria-expanded'),'false');
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'English mobile overflow');
+  await page.goto(base+'/solana/');assert.equal(await page.locator('#language-select').inputValue(),'en');await view('send-panel');assert.equal(await page.locator('#sol-transfer button').textContent(),'Review transfer');
+  await page.goto(base+'/tron/');await view('test-funding-panel');assert.equal(await page.locator('#tron-claim').textContent(),'Get 5 test TRX');
+  await page.locator('#language-select').selectOption('zh-TW');assert.equal(await page.locator('#tron-claim').textContent(),'領取 5 測試 TRX');
+  await page.setViewportSize({width:1280,height:900});await page.goto(base);await page.locator('#language-select').selectOption('en');
+  const untranslated=[];
+  for(const route of ['overview','send-panel','receive-panel','exchange-panel','test-funding-panel','activity-panel','history-panel','settings-panel','watch-panel','contacts-panel','diagnostics-panel','balance-panel','transaction-panel','first-transaction']){
+    await view(route);
+    await page.evaluate(()=>document.querySelectorAll('main details').forEach(el=>el.open=true));
+    const remaining=await page.evaluate(()=>{
+      const walker=document.createTreeWalker(document.querySelector('main'),NodeFilter.SHOW_TEXT);const result=[];
+      while(walker.nextNode()) {const n=walker.currentNode,p=n.parentElement;if(!p.closest('[translate="no"],script,style,textarea,input,code,pre') && p.getClientRects().length && /[\u3400-\u9fff]/.test(n.textContent))result.push(n.textContent.trim());}
+      return result;
+    });
+    untranslated.push(...remaining.map(text=>route+': '+text));
+  }
+  for(const family of ['solana','tron']) {
+    await page.goto(base+'/'+family+'/');
+    for(const route of ['overview','send-panel','receive-panel','settings-panel','test-funding-panel','history-panel']) {
+      await view(route);await page.evaluate(()=>document.querySelectorAll('main details').forEach(el=>el.open=true));
+      const remaining=await page.evaluate(()=>{const walker=document.createTreeWalker(document.querySelector('main'),NodeFilter.SHOW_TEXT),texts=[];while(walker.nextNode()){const n=walker.currentNode,p=n.parentElement;if(!p.closest('[translate="no"],script,style,textarea,input,code,pre')&&p.getClientRects().length&&/[\u3400-\u9fff]/.test(n.textContent))texts.push(n.textContent.trim());}return texts;});
+      untranslated.push(...remaining.map(text=>family+'/'+route+': '+text));
+    }
+  }
+  await page.goto(base+'/showcase');await page.waitForFunction(()=>document.querySelector('#verified-evidence').textContent.includes('Pending acceptance'));
+  const evidenceText=await page.locator('#verified-evidence').textContent();assert.ok(!/[\u3400-\u9fff]/.test(evidenceText),'English evidence and limitations');
+  assert.deepEqual(untranslated,[],'untranslated English UI messages');
+  assert.equal(await page.evaluate(()=>window.FlowI18n.t('__proto__')),'__proto__');
+  await page.goto(base);await view('contacts-panel');await page.locator('#contact-label').fill('總覽');await page.locator('#contact-address').fill(address);await page.locator('#contact-form button').click();assert.equal(await page.locator('#contacts-list strong').textContent(),'總覽');
+  await page.locator('#language-select').selectOption('zh-CN');assert.equal(await page.locator('#contacts-list strong').textContent(),'總覽');
+  // Reflow and theme checks use the same API fixtures as the interaction tests.
+  for (const family of ['', 'solana/', 'tron/']) {
+    await page.goto(base+'/'+family);
+    for (const locale of ['zh-TW','en','zh-CN']) {
+      await page.locator('#language-select').selectOption(locale);
+      for (const width of [375,768,1024,1440]) {
+        await page.setViewportSize({width,height:900});
+        for (const mode of ['light','dark']) {
+          if(await page.getAttribute('html','data-theme')!==mode)await page.locator('#theme-toggle').click();
+          for (const target of ['overview','send-panel','receive-panel','test-funding-panel']) {
+            await view(target);
+            assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth), `horizontal overflow: ${family} ${locale} ${width} ${mode} ${target}`);
+          }
+          await view('overview');
+          if (!family && width===1440) {
+            const assets=await page.locator('#tokens-panel').boundingBox(),activity=await page.locator('#history-panel').boundingBox();
+            assert.ok(Math.abs(assets.y-activity.y)<2 && assets.x<activity.x,'desktop overview groups assets beside history');
+          }
+          if (process.env.FLOWLEDGER_UI_SCREENSHOTS && locale==='en' && [375,1440].includes(width)) {
+            await fs.mkdir(process.env.FLOWLEDGER_UI_SCREENSHOTS,{recursive:true});
+            await page.screenshot({path:path.join(process.env.FLOWLEDGER_UI_SCREENSHOTS,`${family.replace('/','')||'evm'}-${width}-${mode}.png`),fullPage:true,animations:'disabled'});
+          }
+        }
+      }
+    }
+  }
+  await page.emulateMedia({reducedMotion:'reduce'});
+  assert.equal(await page.locator('#theme-toggle').evaluate(el=>getComputedStyle(el).transitionDuration),'0s');
+  await page.goto(base);await view('exchange-panel');
+  assert.equal(await page.locator('#swap-advanced').getAttribute('open'),null);
+  await page.locator('#swap-advanced summary').focus();await page.keyboard.press('Enter');
+  assert.equal(await page.locator('#swap-advanced').evaluate(el=>el.open),true,'keyboard opens advanced swap settings');
+  console.log('PASS: all wallet families reflow at 375/768/1024/1440 px in three locales and both themes; keyboard disclosure and reduced motion.');
+  console.log('PASS: task-based navigation, en/zh-CN/zh-TW live switching, draft/password preservation, theme persistence, mobile menu/escape, and cross-chain preferences.');
+  assert.deepEqual(errors,[]);console.log('PASS: five EVM networks including POL, contacts, observation, RPC failures, pool selection, both exchange workflows, lost-response reload recovery, history search, diagnostics, Solana and TRON create/quote/send/finalized UI, TRC20 query, mobile layout (mock APIs only).');
+ }finally{await browser.close();server.close();}
+})().catch(error=>{console.error(error);server.close();process.exitCode=1;});

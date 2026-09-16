@@ -104,19 +104,34 @@ func (c *Client) SendTransaction(ctx context.Context, tx *types.Transaction) err
 	if err := c.checkNetwork(ctx); err != nil {
 		return err
 	}
-	if tx.ChainId().Cmp(big.NewInt(SepoliaID)) != 0 {
+	if tx.ChainId().Cmp(big.NewInt(c.ChainID())) != 0 {
 		return ErrNetwork
 	}
 	raw, err := tx.MarshalBinary()
 	if err != nil {
 		return ErrUnavailable
 	}
-	var hash common.Hash
-	if err := c.rpc.Client().CallContext(ctx, &hash, "eth_sendRawTransaction", hexutil.Encode(raw)); err != nil {
+	var wireHash string
+	if err := c.rpc.Client().CallContext(ctx, &wireHash, "eth_sendRawTransaction", hexutil.Encode(raw)); err != nil {
 		return rpcError(err)
+	}
+	hash, err := rpcHashToDomain(wireHash)
+	if err != nil {
+		return err
 	}
 	if hash != tx.Hash() {
 		return ErrUnavailable
 	}
 	return nil
+}
+
+func (c *Client) NonceAt(ctx context.Context, account common.Address) (uint64, error) {
+	if err := c.checkNetwork(ctx); err != nil {
+		return 0, err
+	}
+	nonce, err := c.rpc.NonceAt(ctx, account, nil)
+	if err != nil {
+		return 0, rpcError(err)
+	}
+	return nonce, nil
 }

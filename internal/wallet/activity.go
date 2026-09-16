@@ -1,18 +1,17 @@
 package wallet
 
 import (
+	"cmp"
 	"context"
 	"encoding/csv"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
 	"math/big"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
-	"strings"
 	"sync"
 
 	"github.com/a861252012/flowledger/internal/chain"
@@ -27,6 +26,7 @@ type ActivityTotal struct {
 	NetRaw      string `json:"netRaw"`
 }
 type ActivityResponse struct {
+	ChainID           int64             `json:"chainId"`
 	Transactions      []*chain.Activity `json:"transactions"`
 	Totals            []ActivityTotal   `json:"totals"`
 	Page              int               `json:"page"`
@@ -50,14 +50,11 @@ func (s *Service) activityHashes() ([]string, error) {
 		return nil, err
 	}
 	var ids []string
-	if json.Unmarshal(data, &ids) != nil || len(ids) > 1000 {
+	if json.Unmarshal(data, &ids) != nil {
 		return nil, errors.New("收支索引檔格式錯誤")
 	}
 	for _, id := range ids {
-		if len(id) != 66 || !strings.HasPrefix(id, "0x") {
-			return nil, errors.New("收支索引檔雜湊錯誤")
-		}
-		if _, err := hex.DecodeString(id[2:]); err != nil {
+		if _, err := ParseTransactionHash(id); err != nil {
 			return nil, errors.New("收支索引檔雜湊錯誤")
 		}
 	}
@@ -84,9 +81,6 @@ func (s *Service) addActivityHashes(ids []string) (int, error) {
 			count += 1
 		}
 	}
-	if len(old) > 1000 {
-		return 0, errors.New("收支索引已達 1000 筆上限")
-	}
 	if count == 0 {
 		return 0, nil
 	}
@@ -109,10 +103,14 @@ func (s *Service) ImportActivity(ctx context.Context, hash string) (*chain.Activ
 	if err != nil {
 		return nil, err
 	}
-	if result.State != "succeeded" && result.State != "reverted" {
+	domain, err := chainActivityToDomain(result)
+	if err != nil {
+		return nil, err
+	}
+	if domain.state != activitySucceeded && domain.state != activityReverted {
 		return nil, errors.New("交易尚未取得有效的鏈上收據，請稍後再匯入")
 	}
-	if _, err := s.addActivityHashes([]string{result.Hash}); err != nil {
+	if _, err := s.addActivityHashes([]string{string(domain.hash)}); err != nil {
 		return nil, err
 	}
 	return result, nil
@@ -184,19 +182,14 @@ func (s *Service) Activity(ctx context.Context, page int) (*ActivityResponse, er
 		return nil, errors.New("頁碼超出範圍")
 	}
 	begin := (page - 1) * 20
-	end := begin + 20
-	if end > len(unique) {
-		end = len(unique)
-	}
-	response := &ActivityResponse{Page: page, Pages: pages, TotalTransactions: len(unique), Transactions: make([]*chain.Activity, end-begin), Totals: []ActivityTotal{}}
+	end := min(begin+20, len(unique))
+	response := &ActivityResponse{ChainID: s.client.ChainID(), Page: page, Pages: pages, TotalTransactions: len(unique), Transactions: make([]*chain.Activity, end-begin), Totals: []ActivityTotal{}}
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 4)
 	for i := begin; i < end; i += 1 {
 		hash := unique[len(unique)-1-i]
 		index := i - begin
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			item, err := s.client.Activity(ctx, hash, common.HexToAddress(address))
@@ -204,33 +197,33 @@ func (s *Service) Activity(ctx context.Context, page int) (*ActivityResponse, er
 				item = &chain.Activity{Hash: hash, State: "unverified", Movements: []chain.Movement{}, Error: err.Error()}
 			}
 			response.Transactions[index] = item
-		}()
+		})
 	}
 	wg.Wait()
 	type totals struct{ received, sent, fee *big.Int }
 	sums := map[string]*totals{}
 	for _, tx := range response.Transactions {
-		if tx.State != "succeeded" && tx.State != "reverted" {
+		domain, err := chainActivityToDomain(tx)
+		if err != nil {
+			return nil, err
+		}
+		if domain.state != activitySucceeded && domain.state != activityReverted {
 			response.Incomplete = true
 			continue
 		}
-		for _, move := range tx.Movements {
-			amount, ok := new(big.Int).SetString(move.Raw, 10)
-			if !ok {
-				return nil, errors.New("收支金額格式錯誤")
-			}
-			sum := sums[move.Asset]
+		for _, move := range domain.movements {
+			sum := sums[move.asset]
 			if sum == nil {
 				sum = &totals{big.NewInt(0), big.NewInt(0), big.NewInt(0)}
-				sums[move.Asset] = sum
+				sums[move.asset] = sum
 			}
-			switch move.Kind {
-			case "receive":
-				sum.received.Add(sum.received, amount)
-			case "send":
-				sum.sent.Add(sum.sent, amount)
-			case "fee":
-				sum.fee.Add(sum.fee, amount)
+			switch move.kind {
+			case activityReceive:
+				sum.received.Add(sum.received, move.amount)
+			case activitySend:
+				sum.sent.Add(sum.sent, move.amount)
+			case activityFee:
+				sum.fee.Add(sum.fee, move.amount)
 			}
 		}
 	}
@@ -239,23 +232,27 @@ func (s *Service) Activity(ctx context.Context, page int) (*ActivityResponse, er
 		net.Sub(net, sum.fee)
 		response.Totals = append(response.Totals, ActivityTotal{asset, sum.received.String(), sum.sent.String(), sum.fee.String(), net.String()})
 	}
-	sort.Slice(response.Totals, func(i, j int) bool { return response.Totals[i].Asset < response.Totals[j].Asset })
+	slices.SortFunc(response.Totals, func(a, b ActivityTotal) int { return cmp.Compare(a.Asset, b.Asset) })
 	return response, nil
 }
 
 func WriteActivityCSV(w io.Writer, response *ActivityResponse) error {
 	writer := csv.NewWriter(w)
+	chainID := response.ChainID
+	if chainID == 0 {
+		chainID = chain.SepoliaID
+	}
 	if err := writer.Write([]string{"chain_id", "hash", "state", "block", "block_time", "kind", "asset", "amount_raw", "counterparty", "evidence"}); err != nil {
 		return err
 	}
 	for _, tx := range response.Transactions {
 		if len(tx.Movements) == 0 {
-			if err := writer.Write([]string{strconv.Itoa(chain.SepoliaID), tx.Hash, tx.State, tx.Block, tx.BlockTime, "", "", "", "", ""}); err != nil {
+			if err := writer.Write([]string{strconv.FormatInt(chainID, 10), tx.Hash, tx.State, tx.Block, tx.BlockTime, "", "", "", "", ""}); err != nil {
 				return err
 			}
 		}
 		for _, m := range tx.Movements {
-			if err := writer.Write([]string{strconv.Itoa(chain.SepoliaID), tx.Hash, tx.State, tx.Block, tx.BlockTime, m.Kind, m.Asset, m.Raw, m.Counterparty, m.Evidence}); err != nil {
+			if err := writer.Write([]string{strconv.FormatInt(chainID, 10), tx.Hash, tx.State, tx.Block, tx.BlockTime, m.Kind, m.Asset, m.Raw, m.Counterparty, m.Evidence}); err != nil {
 				return err
 			}
 		}
