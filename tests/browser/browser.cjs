@@ -165,8 +165,10 @@ const server = http.createServer(async (req,res)=>{
   await page.waitForFunction(()=>document.querySelector('#activity-updated').textContent.includes('最後更新'));
   await page.screenshot({path:'/tmp/wallet-ux-activity.png',fullPage:true});
   await view('settings-panel');assert.equal(await page.locator('#password-form').isVisible(),false);
-  await view('test-funding-panel');assert.equal(await page.locator('#claim-native').isVisible(),false);
-  assert.ok(await page.locator('#test-funding-panel a[href^="https:"]').count()>0);
+  await view('test-funding-panel');assert.equal(await page.locator('#claim-native').isVisible(),true);
+  await page.locator('#claim-native').click();
+  await page.waitForFunction(()=>document.querySelector('#test-funding-status').textContent.includes('鏈上執行成功'));
+  assert.equal(await page.locator('#claim-usdc').isEnabled(),true);
   await view('send-panel');
   await page.locator('#recipient-search').fill('主要');
   assert.ok(await page.locator('#contact-select optgroup option').count()>0,'own wallets available as recipients');
@@ -194,7 +196,7 @@ const server = http.createServer(async (req,res)=>{
     assert.equal(await page.locator('#contacts-list strong').textContent(),'Chain contact');
     await page.locator('#contacts-list button').filter({hasText:'發送資產'}).click();
     assert.equal(await page.locator('#'+recipientID).inputValue(),value);
-    await view('test-funding-panel');assert.ok(await page.locator('#test-funding-panel a[href^="https:"]').count()>0);
+    await view('test-funding-panel');assert.equal(await page.locator(family==='solana'?'#sol-airdrop':'#tron-claim').isEnabled(),true);
   }
   console.log('PASS: activity navigation/refresh, hidden unavailable controls, faucets, own-wallet recipients, contact rename/search/undo/persistence and EVM/SOL/TRX isolation.');
 

@@ -20,7 +20,7 @@ func TestSharedDemoBoundaries(t *testing.T) {
 		{"POST", "/api/wallet/accounts", 204}, {"POST", "/api/wallet/accounts/update", 403},
 		{"POST", "/api/wallet/create", 403}, {"POST", "/api/wallet/import", 403},
 		{"POST", "/api/wallet/password", 403}, {"POST", "/api/wallet/scan", 403},
-		{"POST", "/net/base/api/wallet/scan", 403}, {"POST", "/api/faucet", 403},
+		{"POST", "/net/base/api/wallet/scan", 403}, {"POST", "/api/faucet", 204}, {"POST", "/api/faucet/solana", 204}, {"POST", "/api/faucet/tron", 204},
 		{"POST", "/solana/api/create", 403}, {"POST", "/tron/api/send", 204}, {"POST", "/solana/api/send", 204}, {"POST", "/solana/api/backup", 204}, {"POST", "/tron/api/backup", 204}, {"POST", "/tron/api/restore", 403}, {"POST", "/solana/api/password", 403},
 		{"GET", "/accounts/abc/api/wallet", 403},
 		{"GET", "/accounts/0123456789abcdef0123456789abcdef/api/wallet", 204},

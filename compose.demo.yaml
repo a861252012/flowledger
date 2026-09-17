@@ -20,6 +20,7 @@ services:
       WALLET_DIR: /data/wallet
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?Set HTTPS PUBLIC_ORIGIN}
       WALLET_ACCESS_TOKEN: ${WALLET_ACCESS_TOKEN:-}
+      TEST_FAUCET_CONFIG: ${TEST_FAUCET_CONFIG:-}
       SHARED_DEMO: ${SHARED_DEMO:-false}
       SEPOLIA_RPC_URL: ${SEPOLIA_RPC_URL:-https://ethereum-sepolia-rpc.publicnode.com}
     ports:

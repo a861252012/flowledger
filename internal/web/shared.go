@@ -74,6 +74,7 @@ func SharedDemo(next http.Handler, token string) http.Handler {
 				return
 			case "/solana/api/quote", "/solana/api/send", "/solana/api/retry", "/solana/api/backup",
 				"/tron/api/quote", "/tron/api/send", "/tron/api/retry", "/tron/api/backup":
+			case "/api/faucet", "/api/faucet/solana", "/api/faucet/tron":
 			case "/api/wallet/accounts", "/api/wallet/quote", "/api/wallet/send", "/api/wallet/retry", "/api/wallet/token", "/api/wallet/exchange/pools", "/api/wallet/backup":
 			default:
 				respondWallet(w, http.StatusForbidden, nil, errSharedDemo)

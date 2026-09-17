@@ -8,7 +8,7 @@ import (
 )
 
 func TestFaucetRejectsForeignAndUnboundedRequests(t *testing.T) {
-	h := NewFaucet(&wallet.TestFaucet{}, nil, "fixture")
+	h := SharedDemo(NewFaucet(&wallet.TestFaucet{}, nil, "fixture"), "")
 	for _, path := range []string{"/api/faucet", "/api/faucet/solana", "/api/faucet/tron"} {
 		for _, tc := range []struct {
 			host, origin, csrf, body string
