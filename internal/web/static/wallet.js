@@ -49,7 +49,9 @@
     const results = await Promise.allSettled([
       request(`/api/balance?address=${encodeURIComponent(walletState.address)}`),
       walletRequest('/api/wallet/history'),
+      walletRequest('/api/wallet'),
     ]);
+    if (results[2].status === 'fulfilled') walletState.csrfToken = results[2].value.csrfToken;
     if (results[0].status === 'fulfilled') {
       const balance = results[0].value;
       $('wallet-balance').replaceChildren(document.createTextNode(balance.eth + ' '), node('small', nativeSymbol));

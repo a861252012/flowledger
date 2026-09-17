@@ -12,6 +12,7 @@ const customToken = '0x4444444444444444444444444444444444444444';
 const router = '0x3bfa4769fb09eefc5a80d6e87c3b9c650f7ae48e';
 let accountFixtures = [{id:'',name:'主要錢包',address,archived:false}];
 let accountWrites = 0, accountFailure = false;
+let walletCSRF='fixture';
 let enforceTokenLimit=false, activeTokenQueries=0, tokenLimitHits=0;
 let exists = true, balanceFailure = false, loseSendResponse = false, history = [], sent = [], quotes = new Map(), allowances = new Map();
 let tronExists=false,tronHistory=[],tronSends=0;const tronAddress='TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH';
@@ -55,7 +56,7 @@ const server = http.createServer(async (req,res)=>{
   if(pathname==='/api/faucet/tron'){res.statusCode=400;return respond({error:'Shasta 測試幣庫存不足'});}
   if(pathname==='/api/faucet/solana'){res.statusCode=502;return respond({error:'Devnet 空投限流，請稍後再試'});}
   if(pathname==='/api/network')return respond({chainId,block:'100',blockTime:new Date().toISOString(),checkedAt:new Date().toISOString()});
-  if(pathname==='/api/wallet')return respond({exists:accountID ? Boolean(accountFixtures.find(item=>item.id===accountID)?.address) : exists,address,chainId,csrfToken:'fixture',exchange:chainId===11155111?{weth,usdc,router}:{}});
+  if(pathname==='/api/wallet')return respond({exists:accountID ? Boolean(accountFixtures.find(item=>item.id===accountID)?.address) : exists,address,chainId,csrfToken:walletCSRF,exchange:chainId===11155111?{weth,usdc,router}:{}});
   if(pathname==='/api/wallet/accounts' && req.method==='GET')return respond(accountFixtures);
   if(pathname==='/api/wallet/accounts' && req.method==='POST'){
    accountWrites++;assert.equal(req.headers['x-wallet-csrf'],'fixture');
@@ -71,6 +72,7 @@ const server = http.createServer(async (req,res)=>{
   if(pathname==='/api/wallet/activity')return respond({page:1,pages:1,totalTransactions:0,transactions:[],totals:[]});
   if(pathname==='/api/wallet/scan')return respond({enabled:false,start:90,next:91,finalized:100,tokens:[]});
   if(pathname==='/api/wallet/token'||pathname==='/api/watch/token'){
+   if(pathname==='/api/wallet/token'&&req.headers['x-wallet-csrf']!==walletCSRF){res.statusCode=403;return respond({error:'fixture stale CSRF token'});}
    if(enforceTokenLimit){
     if(activeTokenQueries){tokenLimitHits++;res.statusCode=429;return respond({error:'fixture concurrent POST limit'});}
     activeTokenQueries++;await new Promise(resolve=>setTimeout(resolve,30));activeTokenQueries--;
@@ -135,6 +137,11 @@ const server = http.createServer(async (req,res)=>{
   await page.locator('#refresh-wallet').click();await page.waitForFunction(()=>!document.querySelector('#refresh-wallet').disabled);
   assert.equal(tokenLimitHits,0,'token refresh respects single concurrent POST limit');
   assert.equal(await page.locator('#token-error').isVisible(),false);enforceTokenLimit=false;
+  for(const csrf of ['fixture-after-restart','fixture']){
+   walletCSRF=csrf;await page.locator('#refresh-wallet').click();
+   await page.waitForFunction(()=>!document.querySelector('#refresh-wallet').disabled);
+   assert.equal(await page.locator('#token-error').isVisible(),false,'refresh renews CSRF before token queries after a restart');
+  }
 
   assert.equal(await page.locator('#manage-accounts').isEnabled(),true);
   await page.locator('#manage-accounts').click();
