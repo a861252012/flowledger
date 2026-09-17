@@ -236,7 +236,14 @@ const server = http.createServer(async (req,res)=>{
   await page.screenshot({path:'/tmp/flowledger-wallet-manager-mobile.png'});
   await page.keyboard.press('Escape');assert.equal(await page.locator('#account-manager').isVisible(),false);
   await page.setViewportSize({width:1280,height:900});
-  await page.locator('#tokens-panel > details > summary').click();await page.locator('#token-contract').fill(customToken);await page.locator('#token-form button').click();await page.waitForFunction(token=>[...document.querySelector('#send-asset').options].some(option=>option.value===token),customToken);
+  assert.equal(await page.locator('#token-form, #token-contract').count(),0);
+  assert.equal(await page.locator('#token-list details').count(),0);
+  assert.ok(await page.locator('#token-list .token-balance').count()>0);
+  assert.ok(await page.locator('#token-list a[href*="/token/"]').count()>0);
+  // Previously saved tokens remain available after removing the custom-token entry point.
+  await page.evaluate(token=>localStorage.setItem('flowledger:tokens:',JSON.stringify([token])),customToken);
+  await page.locator('#refresh-wallet').click();
+  await page.waitForFunction(token=>[...document.querySelector('#send-asset').options].some(option=>option.value===token),customToken);
   await view('send-panel');await page.locator('#send-asset').selectOption(customToken);assert.equal(await page.locator('#send-amount-label').textContent(),'最小單位數量（整數）');await page.locator('#send-to').fill(address);await page.locator('#send-amount').fill('123');await page.locator('#send-form button[type=submit]').click();await page.locator('#send-confirmation').waitFor({state:'visible'});assert.equal([...quotes.values()].at(-1).amountRaw,'123');assert.equal([...quotes.values()].at(-1).amount,'');await page.locator('#cancel-send').click();
   await view('test-funding-panel');await page.locator('#claim-native').click();
   await page.waitForFunction(()=>document.querySelector('#test-funding-status').textContent.includes('鏈上執行成功'));

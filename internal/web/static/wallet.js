@@ -309,19 +309,6 @@
     finally { $('backup-password').value = ''; button.disabled = false; }
   });
 
-  $('token-form').addEventListener('submit', async event => {
-    event.preventDefault();
-    const button = event.currentTarget.querySelector('button');
-    if (button.disabled) return;
-    button.disabled = true;
-    $('token-error').hidden = true;
-    try {
-      const token = await walletRequest('/api/wallet/token', { contract: $('token-contract').value.trim() });
-      tokens.set(token.contract.toLowerCase(), token);
-      renderTokens();
-    } catch (error) { showWalletError('token-error', error); }
-    finally { button.disabled = false; }
-  });
   function renderTokens() {
     try { const previous = JSON.parse(localStorage.getItem(tokenStorageKey) || '[]'); const addresses = [...new Set([...(Array.isArray(previous) ? previous : []), ...tokens.keys()])].filter(address => /^0x[0-9a-fA-F]{40}$/.test(address)).slice(-20); localStorage.setItem(tokenStorageKey, JSON.stringify(addresses)); } catch {}
       $('token-list').replaceChildren();
@@ -332,9 +319,7 @@
         const symbol = node('strong', item.symbol); symbol.translate = false;
         row.append(symbol, node('p', item.balance, 'token-balance mono'));
         if (item.stale) row.append(node('p', '餘額未更新，顯示上次查詢結果。', 'error'));
-        const raw = node('details');
-        raw.append(node('summary', '代幣詳情'), node('p', item.contract, 'mono'), details([['精度', item.decimals], ['最小單位餘額', item.balanceRaw]]), explorer('token', item.contract));
-        row.append(raw);
+        row.append(explorer('token', item.contract));
         $('token-list').append(row);
         $('send-asset').append(Object.assign(new Option(`${item.symbol} · ${item.contract.slice(0, 8)}…`, item.contract.toLowerCase()), {translate:false}));
       }
