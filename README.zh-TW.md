@@ -10,6 +10,16 @@
 
 *介面預覽使用本機測試資料。*
 
+## Solidity 測試 ETH 存款箱
+
+Solidity 存款／提領合約搭配 Sepolia 簡易面板，包含每個地址獨立餘額與重入防護。本機合約及瀏覽器測試已通過；Sepolia 部署與真實存提仍待驗收。未設定部署地址時，面板停用操作。
+
+[合約、測試與啟用方式](docs/eth-vault.md)。存款箱使用 AI 協作開發。
+
+## 本機啟動與驗證
+
+[本機啟動](docs/wallet-reference.md#run-with-docker) · [架構](docs/architecture.md) · [展示流程](docs/demo-script.md) · [Go 風格與檢查](docs/go-style.md)
+
 ## 主要功能
 
 - 建立、還原及管理本機錢包，支援加密備份。

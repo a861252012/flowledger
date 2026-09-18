@@ -21,6 +21,9 @@ func TestLoadConfigAppliesDefaultsAtTheProcessBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if config.sepoliaVault != "" {
+		t.Fatalf("sepoliaVault default: got %q, want empty", config.sepoliaVault)
+	}
 	if config.httpHost != defaultHTTPHost || config.httpPort != defaultHTTPPort {
 		t.Fatalf("http defaults: %#v", config)
 	}
@@ -54,6 +57,7 @@ func TestLoadConfigValidatesProcessInputs(t *testing.T) {
 		{name: "port text", key: "PORT", value: "nope", want: "PORT 必須是 1–65535 的整數"},
 		{name: "host", key: "HTTP_HOST", value: "0.0.0.1", want: "HTTP_HOST 僅允許 127.0.0.1 或 0.0.0.0"},
 		{name: "token", key: "WALLET_ACCESS_TOKEN", value: "short", want: "若設定 WALLET_ACCESS_TOKEN，必須至少 32 字元"},
+		{name: "vault invalid", key: "SEPOLIA_VAULT_ADDRESS", value: "0x123", want: "SEPOLIA_VAULT_ADDRESS 格式錯誤"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			values := make(map[string]string, len(base)+1)

@@ -34,6 +34,7 @@ type Service struct {
 	sendMu        sync.Mutex
 	historyMu     sync.Mutex
 	walletDir     string
+	vaultAddress  string
 	lockFile      *os.File
 	storageFault  atomic.Bool
 }
@@ -257,7 +258,16 @@ func (s *Service) QuoteCommand(ctx context.Context, command QuoteCommand) (*Quot
 		switch command.Action {
 		case ActionWrap, ActionUnwrap, ActionSwap:
 			return nil, errors.New("此網路支援原生幣與 ERC-20 收付款；兌換目前只配置 Ethereum Sepolia")
+		case ActionVaultDeposit, ActionVaultWithdraw:
+			return nil, errors.New("存款箱目前僅支援 Ethereum Sepolia 測試網")
 		}
+	}
+
+	if command.Action == ActionVaultDeposit || command.Action == ActionVaultWithdraw {
+		if s.vaultAddress == "" {
+			return nil, errors.New("尚未配置存款箱合約地址")
+		}
+		command.Contract = EVMAddress(s.vaultAddress)
 	}
 	// Single outstanding tx constraint: block new quotes while a transaction is in flight
 	if s.journal.HasInFlightTx() {
@@ -388,6 +398,25 @@ func (s *Service) Send(ctx context.Context, quoteID, password string) (*SendResp
 	switch quote.Action {
 	case "wrap", "unwrap", "swap":
 		if err := RecheckExchange(ctx, s.client, quote); err != nil {
+			return nil, err
+		}
+	case ActionVaultDeposit, ActionVaultWithdraw:
+		if s.client.ChainID() != chain.SepoliaID || s.vaultAddress == "" || quote.Contract != common.HexToAddress(s.vaultAddress) {
+			return nil, errors.New("存款箱設定不符或已變更，請重新預估")
+		}
+		if err := VerifyContractBytecode(ctx, s.client, quote.Contract); err != nil {
+			return nil, err
+		}
+		if quote.Action == ActionVaultWithdraw {
+			vaultBal, err := QueryVaultBalanceOf(ctx, s.client, quote.Contract, quote.From)
+			if err != nil {
+				return nil, err
+			}
+			if vaultBal.Cmp(quote.AmountRaw) < 0 {
+				return nil, errors.New("存款箱餘額不足以提款")
+			}
+		}
+		if err := SimulateVaultCall(ctx, s.client, quote.From, quote.TxTo, quote.TxValue, quote.Data); err != nil {
 			return nil, err
 		}
 	}

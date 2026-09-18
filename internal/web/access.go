@@ -16,14 +16,16 @@ var accessPage = template.Must(template.New("access").Parse(`<!doctype html><htm
 // HttpOnly session cookie for browsers. It never issues a browser auth challenge.
 func RequireAccessToken(next http.Handler, token string) http.Handler {
 	session := rand.Text()
-	publicQueries := LimitTraffic(next)
-	next = LimitTraffic(next)
+	// Public unauthenticated queries and authenticated sessions maintain separate
+	// traffic budgets so external public traffic cannot exhaust the administrator's quota.
+	publicTraffic := LimitTraffic(next)
+	authenticatedTraffic := LimitTraffic(next)
 	var loginMu sync.Mutex
 	window := time.Now()
 	attempts := 0
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/healthz" && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
-			next.ServeHTTP(w, r)
+			authenticatedTraffic.ServeHTTP(w, r)
 			return
 		}
 		w.Header().Set("Cache-Control", "no-store")
@@ -32,7 +34,7 @@ func RequireAccessToken(next http.Handler, token string) http.Handler {
 				http.Error(w, "僅允許本機存取", http.StatusForbidden)
 				return
 			}
-			next.ServeHTTP(w, r)
+			authenticatedTraffic.ServeHTTP(w, r)
 			return
 		}
 		username, password, ok := r.BasicAuth()
@@ -78,7 +80,7 @@ func RequireAccessToken(next http.Handler, token string) http.Handler {
 			authenticated = true
 		}
 		if authenticated {
-			next.ServeHTTP(w, r)
+			authenticatedTraffic.ServeHTTP(w, r)
 			return
 		}
 		if _, public := r.Context().Value(publicOriginKey{}).(string); public && publicReadAllowed(r) {
@@ -90,7 +92,7 @@ func RequireAccessToken(next http.Handler, token string) http.Handler {
 				}
 				_ = publicPage.Execute(w, map[string]any{"Native": native, "Public": true})
 			} else {
-				publicQueries.ServeHTTP(w, r)
+				publicTraffic.ServeHTTP(w, r)
 			}
 			return
 		}

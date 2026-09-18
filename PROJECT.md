@@ -108,4 +108,4 @@ type BundlerClient interface {
 - `internal/wallet/erc4337/mock_server.go`：執行緒安全 Mock Bundler Server（供單元與端對端測試共用）。
 - `internal/wallet/erc4337/erc4337_test.go`：單元測試、官方測試向量驗證、簽章還原測試。
 - `internal/wallet/erc4337/client_test.go`：RPC 客戶端、Mock 伺服器、AA 錯誤模擬與收據輪詢測試。
-- `test/e2e/erc4337/`：端對端整合測試套件（4-Tier 測試案例與 runner）。
+- `internal/wallet/erc4337/*_test.go`：整合與對抗性測試套件（包含 71 個測試與模糊測試函式、對抗性壓力測試與 Mock Bundler 驗證）。

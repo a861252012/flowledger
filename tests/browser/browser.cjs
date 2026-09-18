@@ -10,6 +10,8 @@ const weth = '0xfff9976782d46cc05630d1f6ebab18b2324d6b14';
 const usdc = '0x1c7d4b196cb0c7b01d743fbc6116a902379c7238';
 const customToken = '0x4444444444444444444444444444444444444444';
 const router = '0x3bfa4769fb09eefc5a80d6e87c3b9c650f7ae48e';
+const vaultContract = '0x5555555555555555555555555555555555555555';
+let vaultEnabled = true, vaultFailure = false, vaultQuoteFailure = false, vaultDeposit = 20000000000000000n;
 let accountFixtures = [{id:'',name:'主要錢包',address,archived:false}];
 let accountWrites = 0, accountFailure = false;
 let walletCSRF='fixture';
@@ -58,6 +60,11 @@ const server = http.createServer(async (req,res)=>{
   if(pathname==='/api/network')return respond({chainId,block:'100',blockTime:new Date().toISOString(),checkedAt:new Date().toISOString()});
   if(pathname==='/api/wallet')return respond({exists:accountID ? Boolean(accountFixtures.find(item=>item.id===accountID)?.address) : exists,address,chainId,csrfToken:walletCSRF,exchange:chainId===11155111?{weth,usdc,router}:{}});
   if(pathname==='/api/wallet/accounts' && req.method==='GET')return respond(accountFixtures);
+  if(pathname==='/api/wallet/vault'){
+   if(vaultFailure){res.statusCode=502;return respond({error:'fixture vault unavailable'});}
+   const enabled=vaultEnabled&&chainId===11155111;
+   return respond({enabled,contract:enabled?vaultContract:'',balance:enabled?String(Number(accountID?0n:vaultDeposit)/1e18):'',balanceRaw:enabled?String(accountID?0n:vaultDeposit):''});
+  }
   if(pathname==='/api/wallet/accounts' && req.method==='POST'){
    accountWrites++;assert.equal(req.headers['x-wallet-csrf'],'fixture');
    const item={id:'a'.repeat(32),name:body.name,address:'',archived:false};accountFixtures.push(item);return respond(item);
@@ -83,11 +90,19 @@ const server = http.createServer(async (req,res)=>{
   }
   if(pathname==='/api/wallet/exchange/pools')return respond({bestFee:500,symbol:'USDC',pools:[{fee:100,error:'fixture unavailable'},{fee:500,output:'0.2',outputRaw:'200000'},{fee:3000,output:'0.1',outputRaw:'100000'},{fee:10000,error:'no pool'}]});
   if(pathname==='/api/wallet/quote'){
+   if(body.action?.startsWith('vault_')){
+    assert.equal(body.to,address);assert.equal(body.contract,undefined);
+    if(vaultQuoteFailure){res.statusCode=400;return respond({error:'fixture vault simulation reverted'});}
+    const id=String(quotes.size+1);quotes.set(id,body);
+    return respond({...body,id,from:address,contract:vaultContract,symbol:'ETH',method:body.action==='vault_deposit'?'deposit()':'withdraw(uint256)',amountRaw:'1000000000000000',maxFeeEth:'0.00001',totalEth:body.action==='vault_withdraw'?'0.00001':'0.00101',expiresAt:new Date(Date.now()+120000).toISOString(),nonce:'0',data:'0x',gasLimit:'60000',maxFeePerGas:'1',maxPriorityFeePerGas:'1'});
+   }
    const id=String(quotes.size+1);quotes.set(id,body);
    return respond({...body,id,from:address,symbol:body.action==='wrap'?'ETH':'USDC',amountRaw:'1',maxFeeEth:'0.00001',totalEth:body.amount,expiresAt:new Date(Date.now()+120000).toISOString(),nonce:'0',data:'0x',gasLimit:'21000',maxFeePerGas:'1',maxPriorityFeePerGas:'1'});
   }
   if(pathname==='/api/wallet/send'){
    const q=quotes.get(body.quoteId);assert.ok(q);sent.push(q.action);
+   if(q.action==='vault_deposit')vaultDeposit+=1000000000000000n;
+   if(q.action==='vault_withdraw')vaultDeposit-=1000000000000000n;
    if(q.action==='approve')allowances.set(q.contract,BigInt(Math.round(Number(q.amount)*10**(q.contract===usdc?6:18))).toString());
    const tx={...q,quoteId:body.quoteId,hash:'0x'+String(sent.length).padStart(64,'0'),state:'succeeded',createdAt:new Date().toISOString(),symbol:'ETH',confirmations:'1'};history.push(tx);if(loseSendResponse){loseSendResponse=false;res.statusCode=502;return respond({error:'fixture proxy lost upstream response after broadcast'});}return respond(tx);
   }
@@ -116,6 +131,8 @@ const server = http.createServer(async (req,res)=>{
   assert.equal(await page.locator('script[src="/static/wallet.js"]').count(),0);
   await view('send-panel');
   assert.equal(await page.locator('#send-form button[type=submit]').isDisabled(),true);
+  await view('vault-panel');
+  assert.equal(await page.locator('#vault-deposit').isDisabled(),true);
   await view('balance-panel');
   await page.locator('#address').fill(address);
   await page.locator('#balance-form button[type=submit]').click();
@@ -129,6 +146,59 @@ const server = http.createServer(async (req,res)=>{
   assert.ok(!publicRequests.some(path=>path.includes('/api/wallet') || path.includes('/api/faucet')), 'visitor never requests private wallet data');
   assert.match(await page.locator('#wallet-balance').textContent(),/1/);
   console.log('PASS: shared public wallet layout, read-only controls, public balance query, no private requests, mobile layout (mock APIs).');
+  await page.goto(base+'/shared-demo#vault-panel');
+  await page.waitForFunction(()=>!document.querySelector('#vault-deposit').disabled);
+  assert.match(await page.locator('#vault-deposited-balance').textContent(),/0\.02 ETH/);
+  await page.locator('#vault-amount').fill('0.001');
+  await page.locator('#vault-deposit').click();
+  await page.locator('#send-confirmation').waitFor({state:'visible'});
+  assert.match(await page.locator('#quote-details').textContent(),/存入存款箱/);
+  assert.match(await page.locator('#quote-details').textContent(),new RegExp('扣款錢包'+address+'存款箱合約'+vaultContract));
+  assert.doesNotMatch(await page.locator('#quote-details').textContent(),/收款地址/);
+  await page.locator('#send-password').fill('fixture-password');
+  await page.locator('#confirm-send-button').click();
+  await page.waitForFunction(()=>document.querySelector('#vault-deposited-balance').textContent.includes('0.021 ETH'));
+  await page.locator('#vault-withdraw').click();
+  await page.locator('#send-confirmation').waitFor({state:'visible'});
+  assert.match(await page.locator('#quote-details').textContent(),/僅為費用上限/);
+  assert.match(await page.locator('#quote-details').textContent(),new RegExp('存款箱合約'+vaultContract+'收款錢包'+address));
+  await page.locator('#send-password').fill('fixture-password');await page.locator('#confirm-send-button').click();
+  await page.waitForFunction(()=>document.querySelector('#vault-deposited-balance').textContent.includes('0.02 ETH'));
+  assert.match(await page.locator('#vault-history').textContent(),/鏈上執行成功/);
+  await page.locator('#language-select').selectOption('en');
+  await page.waitForFunction(()=>document.querySelector('#vault-deposit').textContent==='Deposit');
+  assert.ok(!/[\u3400-\u9fff]/.test(await page.locator('#vault-panel').innerText()),'vault English messages are translated');
+  await page.locator('#language-select').selectOption('zh-TW');
+  await fs.mkdir('/tmp/wallet-vault-implementation',{recursive:true});
+  await page.screenshot({path:'/tmp/wallet-vault-implementation/vault-desktop.png',fullPage:true});
+  await page.setViewportSize({width:375,height:812});
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'vault fits mobile');
+  await page.screenshot({path:'/tmp/wallet-vault-implementation/vault-mobile.png',fullPage:true});
+  await page.setViewportSize({width:1280,height:900});
+  vaultQuoteFailure=true;await page.locator('#vault-deposit').click();
+  await page.waitForFunction(()=>document.querySelector('#vault-error').textContent.includes('simulation reverted'));
+  assert.equal(await page.locator('#send-confirmation').isVisible(),false);vaultQuoteFailure=false;
+  vaultEnabled=false;await page.locator('#vault-refresh').click();
+  await page.waitForFunction(()=>document.querySelector('#vault-status').textContent.includes('尚未啟用'));
+  assert.equal(await page.locator('#vault-deposit').isDisabled(),true);
+  vaultEnabled=true;vaultFailure=true;await page.locator('#vault-refresh').click();
+  await page.waitForFunction(()=>document.querySelector('#vault-error').textContent.includes('vault unavailable'));
+  assert.equal(await page.locator('#vault-withdraw').isDisabled(),true);vaultFailure=false;
+  await page.goto(base+'/net/base/#vault-panel');await page.locator('#wallet-dashboard').waitFor({state:'visible'});
+  assert.equal(await page.locator('#nav-vault').isVisible(),false);
+  assert.equal(await page.getAttribute('body','data-view'),'overview');
+  accountFixtures.push({id:'b'.repeat(32),name:'Vault second account',address,archived:false});
+  await page.goto(base+'/#vault-panel');await page.waitForFunction(()=>!document.querySelector('#vault-deposit').disabled);
+  await page.locator('#vault-amount').fill('0.001');await page.locator('#vault-deposit').click();
+  await page.locator('#send-confirmation').waitFor({state:'visible'});await page.locator('#cancel-send').click();
+  await page.locator('#account-select').selectOption('b'.repeat(32));
+  await page.waitForURL('**/accounts/'+ 'b'.repeat(32) +'/');await view('vault-panel');
+  await page.waitForFunction(()=>document.querySelector('#vault-deposited-balance').textContent.includes('0 ETH'));
+  assert.equal(await page.locator('#vault-amount').inputValue(),'','account switch clears amount');
+  assert.equal(await page.locator('#send-confirmation').isVisible(),false,'account switch cannot reuse quote');
+  accountFixtures.pop();
+  history=[];sent=[];quotes.clear();
+  console.log('PASS: vault deposit/withdraw confirmation, balance refresh, unavailable/disabled/wrong-network states and mobile layout (mock APIs).');
   await page.goto(base+'/shared-demo');
   await page.locator('#wallet-dashboard').waitFor({state:'visible'});
   assert.equal(await page.locator('a[href="/login"]').count(),0);

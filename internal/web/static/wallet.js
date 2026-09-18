@@ -8,6 +8,8 @@
   let setupMode = 'create';
   let quote;
   let sending = false;
+  let vaultEnabled = false;
+  let vaultBusy = false;
   const flowKey = 'flowledger:exchange-flow:' + networkPrefix;
   let flow;
   try { const saved = JSON.parse(sessionStorage.getItem(flowKey) || 'null'); if (saved && ['eth-usdc','usdc-eth'].includes(saved.direction) && ['wrap','swap','unwrap','done'].includes(saved.phase) && typeof saved.amount === 'string' && typeof saved.id === 'string') flow = saved; } catch {}
@@ -16,7 +18,7 @@
   let historySnapshot = [];
   let activityPage = 1;
   let activityLoading = false;
-  const actionLabels = {speedup:"加速原交易",cancel:"取消原交易（零額自轉）",eth:"資產轉帳",transfer:"代幣轉帳",approve:"代幣授權",wrap:"ETH → WETH 包裝",unwrap:"WETH → ETH 解包",swap:"代幣兌換"};
+  const actionLabels = {speedup:"加速原交易",cancel:"取消原交易（零額自轉）",eth:"資產轉帳",transfer:"代幣轉帳",approve:"代幣授權",wrap:"ETH → WETH 包裝",unwrap:"WETH → ETH 解包",swap:"代幣兌換",vault_deposit:'存入存款箱',vault_withdraw:'從存款箱提領'};
   const stateLabels = { replaced:"同 Nonce 的另一筆交易已收錄", submitted: '已廣播，等待收錄', pending: '等待區塊收錄', broadcast_unknown: '廣播結果待確認', succeeded: '鏈上執行成功', reverted: '鏈上執行失敗', reorg_detected: '區塊變更，待確認', receipt_unavailable: '收據尚不可用' };
 
   async function walletRequest(path, body) {
@@ -75,12 +77,20 @@
     }
     await refreshTokens();
     if (flow?.pending) await reconcileFlow();
+    if (document.body.dataset.view === 'vault-panel') await refreshVault();
     button.disabled = false;
     $('check-funding').disabled = false;
   }
 
   function renderHistory(transactions) {
     historySnapshot = transactions || [];
+    $('vault-history').replaceChildren();
+    for (const tx of historySnapshot.filter(tx => (tx.action || '').startsWith('vault_')).slice(0, 5)) {
+      const row = node('p');
+      row.append(node('strong', actionLabels[tx.action]), node('span', ` · ${tx.amount} ETH · `), node('span', stateLabels[tx.state] || '狀態待確認'), document.createTextNode(' '), explorer('tx', tx.hash));
+      $('vault-history').append(row);
+    }
+    if (!$('vault-history').children.length) $('vault-history').append(node('p', '尚無存款箱操作紀錄。', 'muted'));
     const term = $('history-search').value.trim().toLowerCase();
     transactions = historySnapshot.filter(tx => [tx.hash,tx.to,tx.symbol,tx.amount,actionLabels[tx.action],stateLabels[tx.state],window.flowledgerAddressLabel?.(tx.to)].some(value=>(String(value || '').toLowerCase().includes(term) || (window.FlowI18n?.t(String(value || '')) || String(value || '')).toLowerCase().includes(term))));
     const list = $('wallet-history');
@@ -102,7 +112,7 @@
       if (tx.finalized) amount.append(node('p', '已達鏈上終局性'));
       else if (tx.confirmations) amount.append(node('p', `${tx.confirmations} 次確認`));
       if (tx.feeEth) amount.append(node('p', `實際費用 ${tx.feeEth} ${nativeSymbol}`));
-      if (tx.action !== 'eth' && tx.state === 'succeeded') expanded.append(node('p', '收據顯示執行成功；代幣實際移動請核對合約紀錄。'));
+      if (tx.action !== 'eth' && tx.state === 'succeeded') expanded.append(node('p', (tx.action || '').startsWith('vault_') ? '收據顯示執行成功；存款餘額請至存款箱重新查詢。' : '收據顯示執行成功；代幣實際移動請核對合約紀錄。'));
       if (tx.state === 'broadcast_unknown' || tx.state === 'submitted' || tx.state === 'pending') {
         const retry = node('button', '重新廣播原交易', 'secondary');
         retry.type = 'button';
@@ -155,6 +165,8 @@
       $('nav-send').hidden = !walletState.exists;
       $('nav-history').hidden = !walletState.exists;
       $('nav-exchange').hidden = !walletState.exists;
+      $('nav-vault').hidden = !walletState.exists || walletState.chainId !== 11155111;
+      $('vault-panel').hidden = !walletState.exists || walletState.chainId !== 11155111;
       if (walletState.exists) {
         $('wallet-address').textContent = walletState.address;
         $('claim-native').textContent = `領取 ${walletState.chainId === 11155111 ? '0.001' : walletState.chainId === 80002 ? '0.1' : '0.0001'} 測試 ${nativeSymbol}`;
@@ -357,28 +369,79 @@
     } catch (error) { showWalletError('send-error', error); }
     finally { button.disabled = false; button.textContent = '預估費用並核對'; }
   });
+  async function refreshVault() {
+    if (vaultBusy || !walletState?.exists || walletState.chainId !== 11155111) return;
+    vaultBusy = true;
+    vaultEnabled = false;
+    $('vault-deposit').disabled = $('vault-withdraw').disabled = $('vault-amount').disabled = true;
+    $('vault-refresh').disabled = true;
+    $('vault-error').hidden = true;
+    $('vault-status').textContent = '正在查詢存款箱…';
+    $('vault-wallet-balance').textContent = '錢包可用餘額：—';
+    $('vault-deposited-balance').textContent = '我的合約存款：—';
+    $('vault-contract-view').replaceChildren();
+    try {
+      const vault = await walletRequest('/api/wallet/vault');
+      if (!vault.enabled) { $('vault-status').textContent = '存款箱尚未啟用。'; return; }
+      const balance = await request(`/api/balance?address=${encodeURIComponent(walletState.address)}`);
+      $('vault-wallet-balance').textContent = `錢包可用餘額：${balance.eth} ETH`;
+      $('vault-deposited-balance').textContent = `我的合約存款：${vault.balance} ETH`;
+      const link = explorer('address', vault.contract);
+      link.textContent = vault.contract;
+      link.classList.add('mono');
+      $('vault-contract-view').append(node('span', '存款箱合約'), document.createTextNode(' '), link);
+      $('vault-status').textContent = '僅支援 Ethereum Sepolia；存款不產生利息，存入與提領皆需支付 Gas。';
+      vaultEnabled = true;
+    } catch (error) { $('vault-status').textContent = '無法取得最新存款，請重新查詢。'; showWalletError('vault-error', error); }
+    finally {
+      vaultBusy = false;
+      $('vault-refresh').disabled = false;
+      $('vault-deposit').disabled = $('vault-withdraw').disabled = $('vault-amount').disabled = !vaultEnabled;
+    }
+  }
+  async function quoteVault(action) {
+    if (!vaultEnabled || vaultBusy || sending) return;
+    if (!$('vault-form').reportValidity()) return;
+    vaultBusy = true;
+    $('vault-deposit').disabled = $('vault-withdraw').disabled = $('vault-refresh').disabled = true;
+    $('vault-error').hidden = true;
+    try {
+      const data = await walletRequest('/api/wallet/quote', {action, to:walletState.address, amount:$('vault-amount').value.trim()});
+      openConfirmation(data);
+    } catch (error) { showWalletError('vault-error', error); }
+    finally { vaultBusy = false; $('vault-deposit').disabled = $('vault-withdraw').disabled = !vaultEnabled; $('vault-refresh').disabled = false; }
+  }
+  $('vault-deposit').addEventListener('click', () => quoteVault('vault_deposit'));
+  $('vault-withdraw').addEventListener('click', () => quoteVault('vault_withdraw'));
+  $('vault-form').addEventListener('submit', event => { event.preventDefault(); quoteVault('vault_deposit'); });
+  $('vault-refresh').addEventListener('click', refreshWallet);
+  window.addEventListener('wallet-view', event => { if (event.detail === 'vault-panel') refreshVault(); });
+
   function openConfirmation(data) {
     if ($('send-confirmation').open || sending) return;
-      quote = data;
-      const entries = [['操作', actionLabels[data.action] || '資產操作'], ['網路', networkName], ['發送地址', data.from], [data.action === 'approve' ? '被授權地址' : '收款地址', data.to], ['數量', `${data.amount} ${data.symbol}`], ['執行費用上限', `${data.maxFeeEth} ${nativeSymbol}`], [data.rollupFeeEth ? '預估總扣款（含費用預留）' : '最多扣除 ' + nativeSymbol, `${data.totalEth} ${nativeSymbol}`], ['報價有效至', time(data.expiresAt)]];
-      if (data.rollupFeeEth) entries.push(['L1／營運費預留', `${data.rollupFeeEth} ETH（估算含緩衝；上鏈費用仍可能變動）`]);
-      if (data.contract) entries.splice(4, 0, ['代幣合約', data.contract]);
-      if (data.exchange) {
-        entries.push(['預估收到', `${data.exchange.expectedOut} ${data.exchange.symbolOut}`], ['最低收到', `${data.exchange.minimumOut} ${data.exchange.symbolOut}`], ['收到資產', data.exchange.tokenOut]);
-        if (data.exchange.router) entries.push(['兌換合約', data.exchange.router], ['滑價', `${data.exchange.slippageBps / 100}%`], ['交易截止時間', time(data.exchange.deadline)]);
-      }
-      $('quote-details').replaceChildren(details(entries));
-      $('confirmation-fee-hint').textContent=data.rollupFeeEth?'執行費有簽署上限；L1／營運費為預留估算，無法由這筆交易設定絕對上限。費用變動需重新預估。':'最高費用是上限，實際手續費依交易執行結果而定。報價逾時需重新預估。';
-      if (data.action === 'speedup' || data.action === 'cancel') $('quote-details').append(node('p', '使用相同 Nonce 與較高手續費競爭收錄。原交易仍可能先成功；送出取消不代表已取消。', 'error'));
-      const raw = document.createElement('details');
-      raw.append(node('summary', '檢視實際簽署內容'), details([['Chain ID', walletState.chainId], ['最小單位', data.amountRaw], ['方法', data.method], ['Nonce', data.nonce], ['Gas limit', data.gasLimit], ['Max fee / gas', `${data.maxFeePerGas} wei`], ['Priority fee / gas', `${data.maxPriorityFeePerGas} wei`]]), node('pre', data.data || '0x'));
-      if (data.exchange?.pool) raw.append(details([['交易池', data.exchange.pool]]));
-      $('quote-details').append(raw);
-      $('approval-warning').hidden = data.action !== 'approve';
-      $('confirm-error').hidden = true;
-      $('send-password').value = '';
-      $('send-confirmation').showModal();
-      $('cancel-send').focus();
+    quote = data;
+    const entries = [['操作', actionLabels[data.action] || '資產操作'], ['網路', networkName], ['發送地址', data.from], [data.action === 'approve' ? '被授權地址' : '收款地址', data.to], ['數量', `${data.amount} ${data.symbol}`], ['執行費用上限', `${data.maxFeeEth} ${nativeSymbol}`], [data.rollupFeeEth ? '預估總扣款（含費用預留）' : '最多扣除 ' + nativeSymbol, `${data.totalEth} ${nativeSymbol}`], ['報價有效至', time(data.expiresAt)]];
+    if (data.rollupFeeEth) entries.push(['L1／營運費預留', `${data.rollupFeeEth} ETH（估算含緩衝；上鏈費用仍可能變動）`]);
+    if (data.action === 'vault_deposit') entries.splice(2, 2, ['扣款錢包', data.from], ['存款箱合約', data.contract]);
+    else if (data.action === 'vault_withdraw') entries.splice(2, 2, ['存款箱合約', data.contract], ['收款錢包', data.to]);
+    else if (data.contract) entries.splice(4, 0, ['代幣合約', data.contract]);
+    if (data.action === 'vault_withdraw') entries.push(['提領說明', '提領金額回到本錢包，錢包另付 Gas；最多扣除欄位僅為費用上限。']);
+    if (data.exchange) {
+      entries.push(['預估收到', `${data.exchange.expectedOut} ${data.exchange.symbolOut}`], ['最低收到', `${data.exchange.minimumOut} ${data.exchange.symbolOut}`], ['收到資產', data.exchange.tokenOut]);
+      if (data.exchange.router) entries.push(['兌換合約', data.exchange.router], ['滑價', `${data.exchange.slippageBps / 100}%`], ['交易截止時間', time(data.exchange.deadline)]);
+    }
+    $('quote-details').replaceChildren(details(entries));
+    $('confirmation-fee-hint').textContent=data.rollupFeeEth?'執行費有簽署上限；L1／營運費為預留估算，無法由這筆交易設定絕對上限。費用變動需重新預估。':'最高費用是上限，實際手續費依交易執行結果而定。報價逾時需重新預估。';
+    if (data.action === 'speedup' || data.action === 'cancel') $('quote-details').append(node('p', '使用相同 Nonce 與較高手續費競爭收錄。原交易仍可能先成功；送出取消不代表已取消。', 'error'));
+    const raw = document.createElement('details');
+    raw.append(node('summary', '檢視實際簽署內容'), details([['Chain ID', walletState.chainId], ['最小單位', data.amountRaw], ['方法', data.method], ['Nonce', data.nonce], ['Gas limit', data.gasLimit], ['Max fee / gas', `${data.maxFeePerGas} wei`], ['Priority fee / gas', `${data.maxPriorityFeePerGas} wei`]]), node('pre', data.data || '0x'));
+    if (data.exchange?.pool) raw.append(details([['交易池', data.exchange.pool]]));
+    $('quote-details').append(raw);
+    $('approval-warning').hidden = data.action !== 'approve';
+    $('confirm-error').hidden = true;
+    $('send-password').value = '';
+    $('send-confirmation').showModal();
+    $('cancel-send').focus();
   }
   $('cancel-send').addEventListener('click', () => { if (!sending) $('send-confirmation').close(); });
   $('send-confirmation').addEventListener('cancel', event => { if (sending) event.preventDefault(); });
@@ -419,7 +482,7 @@
       ...tokens.keys(),
     ].filter(Boolean).map(address => address.toLowerCase()))];
     let failed = false;
-    // Token queries use POST and share the demo's single-request write limit.
+    // Token queries use the read-rate pool and do not block or get blocked by wallet write operations.
     for (const contract of addresses) {
       try { tokens.set(contract, await walletRequest('/api/wallet/token', {contract})); }
       catch {
@@ -589,7 +652,7 @@
     if(flow!==current)throw new Error('引導已變更，請重新報價。');
     data.flowID=current.id;data.flowKind=kind;openConfirmation(data);
   }
-  setInterval(()=>{if(flow?.pending && !document.hidden && !sending)refreshWallet();},10000);
+  setInterval(()=>{if((flow?.pending || historySnapshot.some(tx => (tx.action || '').startsWith('vault_') && ['submitted','pending','broadcast_unknown','receipt_unavailable','reorg_detected'].includes(tx.state))) && !document.hidden && !sending)refreshWallet();},10000);
 
   function displayAsset(raw, asset) {
     const config = walletState.exchange;

@@ -99,7 +99,7 @@ func (s *Service) ImportActivity(ctx context.Context, hash string) (*chain.Activ
 	if err != nil {
 		return nil, err
 	}
-	result, err := s.client.Activity(ctx, hash, common.HexToAddress(address))
+	result, err := s.client.Activity(ctx, hash, common.HexToAddress(address), common.HexToAddress(s.VaultAddress()))
 	if err != nil {
 		return nil, err
 	}
@@ -192,7 +192,7 @@ func (s *Service) Activity(ctx context.Context, page int) (*ActivityResponse, er
 		wg.Go(func() {
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			item, err := s.client.Activity(ctx, hash, common.HexToAddress(address))
+			item, err := s.client.Activity(ctx, hash, common.HexToAddress(address), common.HexToAddress(s.VaultAddress()))
 			if err != nil {
 				item = &chain.Activity{Hash: hash, State: "unverified", Movements: []chain.Movement{}, Error: err.Error()}
 			}

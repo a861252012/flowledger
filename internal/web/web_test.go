@@ -381,3 +381,61 @@ func TestNormalizeWorkspaceRedirect(t *testing.T) {
 		}
 	}
 }
+
+func TestWalletTokenQueryRoutes(t *testing.T) {
+	c, err := chain.New("http://127.0.0.1:1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	ws, err := wallet.NewService(c, t.TempDir(), 2, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Close()
+	if _, err := ws.Import("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", "fixture-password-123"); err != nil {
+		t.Fatal(err)
+	}
+	handler, err := New(c, ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. GET 缺少 contract 參數應回傳 400
+	getReq := httptest.NewRequest("GET", "http://127.0.0.1:8090/api/wallet/token", nil)
+	getReq.Host = "127.0.0.1:8090"
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, getReq)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "缺少 contract 參數") {
+		t.Fatalf("GET token without contract: got %d %s", rec.Code, rec.Body.String())
+	}
+
+	// 2. GET 請求不強制要求 X-Wallet-CSRF
+	getReqWithParam := httptest.NewRequest("GET", "http://127.0.0.1:8090/api/wallet/token?contract=0x0000000000000000000000000000000000000001", nil)
+	getReqWithParam.Host = "127.0.0.1:8090"
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, getReqWithParam)
+	// 由於 local RPC 127.0.0.1:1 無法連線，此處預期為 RPC 連線失敗 (502/504) 或 400，但絕不能是 403 CSRF 錯誤
+	if rec.Code == http.StatusForbidden {
+		t.Fatalf("GET token should not be rejected with 403 CSRF: %d %s", rec.Code, rec.Body.String())
+	}
+
+	// 3. POST 請求在缺少 CSRF 時必須被阻擋為 403
+	postReqNoCSRF := httptest.NewRequest("POST", "http://127.0.0.1:8090/api/wallet/token", strings.NewReader(`{"contract":"0x0000000000000000000000000000000000000001"}`))
+	postReqNoCSRF.Host = "127.0.0.1:8090"
+	postReqNoCSRF.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, postReqNoCSRF)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("POST token without CSRF must be 403: got %d", rec.Code)
+	}
+
+	// 4. GET 請求帶前後空格應正確被 TrimSpace 處理，且無效合約地址應回傳 400
+	getReqTrim := httptest.NewRequest("GET", "http://127.0.0.1:8090/api/wallet/token?contract=%20invalid-addr%20", nil)
+	getReqTrim.Host = "127.0.0.1:8090"
+	recTrim := httptest.NewRecorder()
+	handler.ServeHTTP(recTrim, getReqTrim)
+	if recTrim.Code != http.StatusBadRequest {
+		t.Fatalf("GET token with invalid address: got %d %s", recTrim.Code, recTrim.Body.String())
+	}
+}

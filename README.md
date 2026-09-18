@@ -10,6 +10,16 @@ A multi-chain testnet wallet experiment written in Go, for exploring transfers, 
 
 *Interface preview using local test data.*
 
+## Solidity ETH vault
+
+A minimal Solidity deposit/withdraw contract with a Sepolia-only panel, per-address balances and reentrancy protection. Local contract and browser tests pass; Sepolia deployment and live deposit/withdraw acceptance are still pending. The panel remains disabled until a deployed address is configured.
+
+[Contract, tests and setup](docs/eth-vault.md). The vault was developed with AI assistance.
+
+## Run and verify
+
+[Local setup](docs/wallet-reference.md#run-with-docker) · [Architecture](docs/architecture.md) · [Demo walkthrough](docs/demo-script.md) · [Go style and checks](docs/go-style.md)
+
 ## Features
 
 - Create, restore and manage local wallets with encrypted backups.

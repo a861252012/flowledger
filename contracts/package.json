@@ -1,0 +1,16 @@
+{
+  "name": "testnet-wallet-lab-contracts",
+  "private": true,
+  "scripts": {
+    "compile": "node compile.js",
+    "check": "node compile.js --check"
+  },
+  "devDependencies": {
+    "solc": "0.8.28"
+  },
+  "overrides": {
+    "solc": {
+      "tmp": "0.2.7"
+    }
+  }
+}

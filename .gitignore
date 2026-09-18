@@ -1,14 +1,26 @@
+# Environment & credentials
 .env
 .env.*
 !.env.example
+*password*
+*.key
+*.keystore
+keystore.json
+faucet-config*.json
+*.lock
+.lock
+
+# Build artifacts & runtime data
 /bin/
 /data/
 /coverage.out
 *.log
 .DS_Store
 
+# Python
 __pycache__/
 *.pyc
 
+# Node & browser tests
 node_modules/
 test-results/

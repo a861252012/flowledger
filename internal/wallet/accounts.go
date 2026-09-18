@@ -160,6 +160,7 @@ func NewAccountService(client *chain.Client, root *Service, id string) (*Service
 		return nil, err
 	}
 	service.catalog = root
+	service.vaultAddress = root.vaultAddress
 	service.keystore.catalogDir = root.walletDir
 	service.keystore.catalogMu = root.keystore.catalogMu
 	return service, nil

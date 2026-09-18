@@ -21,11 +21,13 @@ const SepoliaWETH = "0xfff9976782d46cc05630d1f6ebab18b2324d6b14"
 var transferTopic = crypto.Keccak256Hash([]byte("Transfer(address,address,uint256)"))
 var depositTopic = crypto.Keccak256Hash([]byte("Deposit(address,uint256)"))
 var withdrawalTopic = crypto.Keccak256Hash([]byte("Withdrawal(address,uint256)"))
+var vaultWithdrawnTopic = crypto.Keccak256Hash([]byte("Withdrawn(address,uint256)"))
+var vaultDepositedTopic = crypto.Keccak256Hash([]byte("Deposited(address,uint256)"))
 var ErrUnrelated = errors.New("此交易沒有可辨識、與本錢包相關的收支")
 var zeroBytes12 [12]byte
 
 // Activity reads canonical receipt evidence. It does not treat pending intent as an asset movement.
-func (c *Client) Activity(ctx context.Context, hash string, owner common.Address) (*Activity, error) {
+func (c *Client) Activity(ctx context.Context, hash string, owner common.Address, configuredVault ...common.Address) (*Activity, error) {
 	if !hashPattern.MatchString(hash) {
 		return nil, ErrHash
 	}
@@ -86,6 +88,25 @@ func (c *Client) Activity(ctx context.Context, hash string, owner common.Address
 	moves, err := receiptMovements(tx, r, from, owner, c.ChainID())
 	if err != nil {
 		return nil, err
+	}
+	// Only the server-configured Sepolia vault can attest to internal ETH withdrawals.
+	if c.ChainID() == SepoliaID && len(configuredVault) == 1 && configuredVault[0] != (common.Address{}) && r.Status == types.ReceiptStatusSuccessful && from == owner && tx.To() != nil && *tx.To() == configuredVault[0] {
+		for _, log := range r.Logs {
+			if log.Address != configuredVault[0] || len(log.Topics) != 2 || log.Topics[1] != common.BytesToHash(owner.Bytes()) || len(log.Data) != 32 {
+				continue
+			}
+			amount := new(big.Int).SetBytes(log.Data)
+			if log.Topics[0] == vaultWithdrawnTopic && amount.Sign() > 0 {
+				moves = append(moves, movementRecord{kind: movementReceive, asset: "ETH", raw: amount, counterparty: log.Address, evidence: "log:" + strconv.FormatUint(uint64(log.Index), 10) + ":Withdrawn"})
+			}
+			if log.Topics[0] == vaultDepositedTopic && amount.Cmp(tx.Value()) == 0 {
+				for i := range moves {
+					if moves[i].kind == movementSend && moves[i].asset == "ETH" {
+						moves[i].evidence += " + log:" + strconv.FormatUint(uint64(log.Index), 10) + ":Deposited"
+					}
+				}
+			}
+		}
 	}
 	if from == owner && c.IsOPStack() {
 		fee, err := c.ReceiptFee(ctx, r)

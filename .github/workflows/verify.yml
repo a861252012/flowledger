@@ -11,11 +11,23 @@ jobs:
       - run: docker build -t flowledger-test .
       - run: docker run --rm -v "$PWD:/app:ro" -v test_modules:/go/pkg/mod flowledger-test go mod download
       - run: mkdir -p /tmp/flowledger-results
-      - run: docker run --rm --network none -v "$PWD:/app:ro" -v test_modules:/go/pkg/mod:ro -v /tmp/flowledger-results:/results -e GOCACHE=/tmp/cache flowledger-test sh -c 'go test -race -count=1 -coverprofile=/results/coverage.out ./... && go vet ./... && test -z "$(gofmt -l cmd internal)" && go fix -diff ./... > /results/gofix.diff && test ! -s /results/gofix.diff'
+      - run: docker run --rm --network none -v "$PWD:/app:ro" -v test_modules:/go/pkg/mod:ro -v /tmp/flowledger-results:/results -e GOCACHE=/tmp/cache flowledger-test sh -c 'go test -race -count=1 -coverprofile=/results/coverage.out ./... && go vet ./... && test -z "$(gofmt -l cmd internal contracts)" && go fix -diff ./... > /results/gofix.diff && test ! -s /results/gofix.diff'
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: go-coverage
           path: /tmp/flowledger-results/coverage.out
+  solidity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: contracts/package-lock.json
+      - run: npm ci --ignore-scripts --prefix contracts
+      - run: npm run check --prefix contracts
   browser:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -42,7 +54,7 @@ jobs:
       - run: docker build -f Dockerfile.deploy --build-arg APP_VERSION="$GITHUB_SHA" -t wallet-smoke .
       - run: python3 tests/deployment/smoke.py wallet-smoke "$GITHUB_SHA"
   publish:
-    needs: [go, browser, deployment, vulnerabilities]
+    needs: [go, solidity, browser, deployment, vulnerabilities]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DEMO_DEPLOY_ENABLED == 'true'
     runs-on: ${{ vars.DEMO_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 20

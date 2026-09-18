@@ -18,9 +18,9 @@
 | 8 | Bundler AA10-AA99 驗證失敗與錯誤解析 | ORIGINAL_REQUEST §R3 | 5 | 5 | ✓ |
 
 ## Test Architecture
-- 測試執行器（Test Runner）：透過標準 Go 測試工具鏈執行 `go test -race -v ./test/e2e/erc4337/...` 與 `go test -race -v ./internal/wallet/...`。
+- 測試執行器（Test Runner）：透過標準 Go 測試工具鏈執行 `go test -race -v ./internal/wallet/erc4337/...` 與 `go test -race -v ./internal/wallet/...`。
 - 測試案例格式：完全自包含測試，搭配執行緒安全之 `MockBundlerServer` 提供可預測的 JSON-RPC 伺服器端模擬。
-- 目錄配置：`test/e2e/erc4337/` 放置端對端驗收測試，`internal/wallet/erc4337/` 放置單元與整合測試。
+- 目錄配置：`internal/wallet/erc4337/` 放置完整之單元測試、整合測試、模糊測試與對抗性壓力測試套件。
 
 ## Real-World Application Scenarios (Tier 4)
 | # | Scenario | Features Exercised | Complexity |
@@ -32,8 +32,8 @@
 | 5 | 高並發操作與收據輪詢：多個 Goroutine 同時建構、簽署並發送 UserOp，驗證零資料競態與執行緒安全性 | F1-F8 | High |
 
 ## Coverage Thresholds
-- Tier 1 (功能覆蓋): ≥5 per feature（8 features × 5 = 40 案例）
-- Tier 2 (邊界與極端): ≥5 per feature（8 features × 5 = 40 案例）
-- Tier 3 (跨功能成對組合): ≥8 案例
-- Tier 4 (真實應用場景): 5 完整場景
-- 總測試案例門檻：≥ 93 個測試案例
+- 測試套件規模：共 71 個測試與模糊測試函式（涵蓋 69 個單元與整合測試、2 個 Fuzz 測試函式，以及數十個子測試案例）
+- Tier 1 (功能覆蓋): 核心功能與 ABI 編解碼
+- Tier 2 (邊界與極端): 邊界值、負數防禦與空值安全
+- Tier 3 (對抗性與並發): 高並發 Race 檢測、金鑰擦除與簽名延展性防禦
+- Tier 4 (真實應用場景): 完整轉帳、合約部署、Paymaster 代付與 Mock Bundler 驗證流程

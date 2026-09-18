@@ -54,7 +54,7 @@
     if (event.matches) closeMenu();
   });
   const views = [...document.querySelectorAll('[data-view]')];
-  const titles = {overview:'總覽', 'send-panel':'發送資產', 'receive-panel':'收款', 'exchange-panel':'資產兌換', 'test-funding-panel':'領取測試幣', 'history-panel':'活動', 'activity-panel':'活動', 'settings-panel':'設定與備份', 'contacts-panel':'地址簿', 'watch-panel':'唯讀觀察', 'diagnostics-panel':'交易診斷', 'balance-panel':'地址餘額', 'transaction-panel':'交易查核', 'first-transaction':'操作指南', 'tokens-panel':'我的代幣'};
+  const titles = {overview:'總覽', 'send-panel':'發送資產', 'receive-panel':'收款', 'exchange-panel':'資產兌換', 'test-funding-panel':'領取測試幣', 'history-panel':'活動', 'activity-panel':'活動', 'settings-panel':'設定與備份', 'contacts-panel':'地址簿', 'watch-panel':'唯讀觀察', 'diagnostics-panel':'交易診斷', 'balance-panel':'地址餘額', 'transaction-panel':'交易查核', 'first-transaction':'操作指南', 'tokens-panel':'我的代幣', 'vault-panel':'測試 ETH 存款箱'};
   const descriptions = {
     overview: '查看餘額，或選擇下一步操作。',
     'send-panel': '填入收款地址與數量，下一步核對費用。',
@@ -64,11 +64,12 @@
     'history-panel': '查看交易狀態，或切換收支明細核對資產變動。',
     'activity-panel': '核對收付款與手續費，匯出需要的紀錄。',
     'settings-panel': '管理加密備份與錢包密碼。',
-    'contacts-panel': '儲存常用收款地址，下次轉帳直接選用。'
+    'contacts-panel': '儲存常用收款地址，下次轉帳直接選用。',
+    'vault-panel': '存入與提領測試 ETH，合約為每個地址獨立記帳。'
   };
   function navigate(focus = false) {
     let current = location.hash.slice(1) || 'overview';
-    if (family === 'evm' && /\/net\//.test(location.pathname) && ['exchange-panel','first-transaction'].includes(current)) current = 'overview';
+    if (family === 'evm' && /\/net\//.test(location.pathname) && ['exchange-panel','first-transaction','vault-panel'].includes(current)) current = 'overview';
     if (!titles[current] || !views.some(el => el.dataset.view.split(' ').includes(current))) current = 'overview';
     document.body.dataset.view = current;
     views.forEach(el => { el.dataset.viewHidden = String(!el.dataset.view.split(' ').includes(current)); });

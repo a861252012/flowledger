@@ -116,6 +116,9 @@ func ParseQuoteRequest(request *QuoteRequest) (QuoteCommand, error) {
 			}
 		}
 		if request.Contract != "" {
+			if action == ActionVaultDeposit || action == ActionVaultWithdraw {
+				return QuoteCommand{}, errors.New("存款箱操作不得由客戶端指定 contract 合約地址")
+			}
 			contract, err = ParseEVMAddress(request.Contract)
 			if err != nil {
 				return QuoteCommand{}, err
@@ -205,20 +208,22 @@ type TronCreateResponse struct {
 type TransactionAction string
 
 const (
-	ActionETH      TransactionAction = "eth"
-	ActionTransfer TransactionAction = "transfer"
-	ActionApprove  TransactionAction = "approve"
-	ActionWrap     TransactionAction = "wrap"
-	ActionUnwrap   TransactionAction = "unwrap"
-	ActionSwap     TransactionAction = "swap"
-	ActionSpeedup  TransactionAction = "speedup"
-	ActionCancel   TransactionAction = "cancel"
+	ActionETH           TransactionAction = "eth"
+	ActionTransfer      TransactionAction = "transfer"
+	ActionApprove       TransactionAction = "approve"
+	ActionWrap          TransactionAction = "wrap"
+	ActionUnwrap        TransactionAction = "unwrap"
+	ActionSwap          TransactionAction = "swap"
+	ActionSpeedup       TransactionAction = "speedup"
+	ActionCancel        TransactionAction = "cancel"
+	ActionVaultDeposit  TransactionAction = "vault_deposit"
+	ActionVaultWithdraw TransactionAction = "vault_withdraw"
 )
 
 func ParseTransactionAction(value string) (TransactionAction, error) {
 	action := TransactionAction(value)
 	switch action {
-	case ActionETH, ActionTransfer, ActionApprove, ActionWrap, ActionUnwrap, ActionSwap, ActionSpeedup, ActionCancel:
+	case ActionETH, ActionTransfer, ActionApprove, ActionWrap, ActionUnwrap, ActionSwap, ActionSpeedup, ActionCancel, ActionVaultDeposit, ActionVaultWithdraw:
 		return action, nil
 	default:
 		return "", fmt.Errorf("不支援的交易操作 %q", value)

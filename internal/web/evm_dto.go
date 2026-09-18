@@ -228,6 +228,20 @@ func newEVMToken(info *wallet.TokenInfo) *evmToken {
 	}
 }
 
+type evmVaultInfo struct {
+	Enabled    bool   `json:"enabled"`
+	Contract   string `json:"contract"`
+	Balance    string `json:"balance"`
+	BalanceRaw string `json:"balanceRaw"`
+}
+
+func newEVMVaultInfo(info *wallet.VaultInfo) *evmVaultInfo {
+	if info == nil {
+		return nil
+	}
+	return &evmVaultInfo{Enabled: info.Enabled, Contract: info.Contract, Balance: info.Balance, BalanceRaw: info.BalanceRaw}
+}
+
 type evmExchangePreview struct {
 	TokenIn       string `json:"tokenIn"`
 	TokenOut      string `json:"tokenOut"`

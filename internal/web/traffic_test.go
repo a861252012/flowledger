@@ -109,3 +109,96 @@ func TestTrafficBoundsBodyAndDeadline(t *testing.T) {
 		}
 	}
 }
+
+func TestTrafficTokenAndPoolsUseReadSlotsWithoutBlockingWrites(t *testing.T) {
+	// Verify that token and pools queries use the 8-slot read pool and do not block writes or get blocked by writes.
+	startedRead := make(chan struct{}, 8)
+	releaseRead := make(chan struct{})
+	startedWrite := make(chan struct{}, 1)
+	releaseWrite := make(chan struct{})
+	var calls atomic.Int32
+
+	h := LimitTraffic(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		cleanPath := strings.TrimSuffix(r.URL.Path, "/")
+		if strings.HasSuffix(cleanPath, "/token") || strings.HasSuffix(cleanPath, "/pools") {
+			startedRead <- struct{}{}
+			<-releaseRead
+		} else {
+			startedWrite <- struct{}{}
+			<-releaseWrite
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	// 1. Occupy the single write slot with a slow write request.
+	var wg sync.WaitGroup
+	defer wg.Wait()
+	var onceRead, onceWrite sync.Once
+	defer onceRead.Do(func() { close(releaseRead) })
+	defer onceWrite.Do(func() { close(releaseWrite) })
+
+	wg.Go(func() {
+		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("POST", "/api/wallet/send", nil))
+	})
+	select {
+	case <-startedWrite:
+	case <-time.After(5 * time.Second):
+		t.Fatal("write handler did not start")
+	}
+
+	// 2. While the write slot is fully occupied, 8 concurrent POST /api/wallet/token and /pools requests must still succeed.
+	testPaths := []string{
+		"/api/wallet/token",
+		"/api/wallet/token/",
+		"/net/polygon/api/wallet/token",
+		"/api/wallet/exchange/pools",
+		"/api/wallet/exchange/pools/",
+		"/accounts/acc1/api/wallet/token",
+		"/api/wallet/token",
+		"/api/wallet/exchange/pools",
+	}
+	for _, p := range testPaths {
+		wg.Go(func() {
+			h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("POST", p, nil))
+		})
+	}
+	for i := 0; i < 8; i += 1 {
+		select {
+		case <-startedRead:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("read handler %d did not start while write was occupied", i)
+		}
+	}
+
+	// 3. The 9th read request must be rejected with 429 because all 8 read slots are occupied.
+	rec9 := httptest.NewRecorder()
+	h.ServeHTTP(rec9, httptest.NewRequest("POST", "/api/wallet/token", nil))
+	if rec9.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429 when read slots full, got %d", rec9.Code)
+	}
+
+	// 4. A 2nd write request must be rejected with 429 because the 1 write slot is occupied.
+	recWrite2 := httptest.NewRecorder()
+	h.ServeHTTP(recWrite2, httptest.NewRequest("POST", "/api/wallet/quote", nil))
+	if recWrite2.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429 when write slot full, got %d", recWrite2.Code)
+	}
+
+	for _, request := range []struct{ method, path string }{
+		{http.MethodPost, "/api/other/token"},
+		{http.MethodPost, "/api/other/pools"},
+		{http.MethodDelete, "/api/wallet/token"},
+	} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(request.method, request.path, nil))
+		if rec.Code != http.StatusTooManyRequests {
+			t.Fatalf("%s %s bypassed occupied write slot: %d", request.method, request.path, rec.Code)
+		}
+	}
+
+	// Clean up handlers
+	onceRead.Do(func() { close(releaseRead) })
+	onceWrite.Do(func() { close(releaseWrite) })
+	wg.Wait()
+}

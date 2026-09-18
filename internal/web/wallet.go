@@ -83,6 +83,24 @@ func registerWalletRoutes(mux *http.ServeMux, ws *wallet.Service) {
 	mux.HandleFunc("GET /api/wallet", statusHandler)
 	mux.HandleFunc("GET /api/wallet/status", statusHandler)
 
+	mux.HandleFunc("GET /api/wallet/vault", walletFilter(func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
+		defer cancel()
+		vaultInfo, err := ws.VaultStatus(ctx)
+		if err != nil {
+			status := http.StatusInternalServerError
+			switch {
+			case errors.Is(err, chain.ErrUnavailable):
+				status = http.StatusBadGateway
+			case errors.Is(err, chain.ErrTimeout):
+				status = http.StatusGatewayTimeout
+			}
+			respondWallet(w, status, nil, err)
+			return
+		}
+		respondWallet(w, http.StatusOK, newEVMVaultInfo(vaultInfo), nil)
+	}))
+
 	mux.HandleFunc("POST /api/wallet/import-keystore", walletFilter(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Keystore    json.RawMessage `json:"keystore"`
@@ -237,19 +255,16 @@ func registerWalletRoutes(mux *http.ServeMux, ws *wallet.Service) {
 		_, _ = w.Write(res)
 	}))
 
-	// POST /api/wallet/token
-	mux.HandleFunc("POST /api/wallet/token", walletFilter(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Contract string `json:"contract"`
-			Spender  string `json:"spender"`
-		}
-		if err := decodeStrictJSON(w, r, &req); err != nil {
-			respondWallet(w, http.StatusBadRequest, nil, err)
+	handleTokenQuery := func(w http.ResponseWriter, r *http.Request, contract, spender string) {
+		contract = strings.TrimSpace(contract)
+		spender = strings.TrimSpace(spender)
+		if contract == "" {
+			respondWallet(w, http.StatusBadRequest, nil, errors.New("缺少 contract 參數"))
 			return
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
-		info, err := ws.Token(ctx, req.Contract, req.Spender)
+		info, err := ws.Token(ctx, contract, spender)
 		if err != nil {
 			status := http.StatusBadRequest
 			if errors.Is(err, wallet.ErrWalletNotFound) {
@@ -263,6 +278,26 @@ func registerWalletRoutes(mux *http.ServeMux, ws *wallet.Service) {
 			return
 		}
 		respondWallet(w, http.StatusOK, newEVMToken(info), nil)
+	}
+
+	// GET /api/wallet/token
+	mux.HandleFunc("GET /api/wallet/token", walletFilter(func(w http.ResponseWriter, r *http.Request) {
+		contract := r.URL.Query().Get("contract")
+		spender := r.URL.Query().Get("spender")
+		handleTokenQuery(w, r, contract, spender)
+	}))
+
+	// POST /api/wallet/token
+	mux.HandleFunc("POST /api/wallet/token", walletFilter(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Contract string `json:"contract"`
+			Spender  string `json:"spender"`
+		}
+		if err := decodeStrictJSON(w, r, &req); err != nil {
+			respondWallet(w, http.StatusBadRequest, nil, err)
+			return
+		}
+		handleTokenQuery(w, r, req.Contract, req.Spender)
 	}))
 
 	// POST /api/wallet/quote

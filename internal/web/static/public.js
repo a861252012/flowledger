@@ -7,6 +7,7 @@
   $('wallet-history').textContent = '錢包交易紀錄僅限擁有者查看；公開交易可至交易查核查詢。';
   $('token-list').textContent = '尚未選擇公開觀察地址。';
   $('history-search').disabled = true;
+  $('vault-status').textContent = '此功能僅限擁有者登入後使用。';
   $('wallet-balance-time').textContent = '請至地址餘額查詢公開地址；此處不顯示擁有者資產。';
   const allowedForms = new Set(['balance-form', 'transaction-form']);
   for (const form of document.querySelectorAll('form')) {

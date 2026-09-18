@@ -67,6 +67,11 @@ func run() error {
 		return err
 	}
 	defer walletService.Close()
+	if config.sepoliaVault != "" {
+		if err := walletService.SetVaultAddress(config.sepoliaVault); err != nil {
+			return err
+		}
+	}
 	if config.sharedDemo {
 		info, err := walletService.Status()
 		if err != nil {

@@ -8,6 +8,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/a861252012/testnet-wallet-lab/internal/wallet"
 )
 
 const (
@@ -43,6 +45,7 @@ type networkRuntimeConfig struct {
 
 type runtimeConfig struct {
 	sepoliaRPCURLs []string
+	sepoliaVault   string
 	httpHost       string
 	httpPort       int
 	accessToken    string
@@ -91,9 +94,19 @@ func loadConfig(getenv func(string) string) (runtimeConfig, error) {
 		}
 	}
 
+	sepoliaVault := strings.TrimSpace(getenv("SEPOLIA_VAULT_ADDRESS"))
+	if sepoliaVault != "" {
+		validated, err := wallet.ValidateAddress(sepoliaVault)
+		if err != nil {
+			return runtimeConfig{}, errors.New("SEPOLIA_VAULT_ADDRESS 格式錯誤")
+		}
+		sepoliaVault = validated.Hex()
+	}
+
 	sepoliaRPC := cmp.Or(getenv("SEPOLIA_RPC_URL"), defaultSepoliaRPC)
 	config := runtimeConfig{
 		sepoliaRPCURLs: rpcURLs(sepoliaRPC, getenv("SEPOLIA_RPC_FALLBACK_URLS")),
+		sepoliaVault:   sepoliaVault,
 		httpHost:       host,
 		httpPort:       port,
 		accessToken:    accessToken,

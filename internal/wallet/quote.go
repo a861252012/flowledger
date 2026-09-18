@@ -143,6 +143,54 @@ func CreateQuote(ctx context.Context, provider ChainQuoteProvider, from common.A
 	)
 
 	switch action {
+	case ActionVaultDeposit, ActionVaultWithdraw:
+		if provider.ChainID() != 11155111 {
+			return nil, errors.New("存款箱目前僅支援 Ethereum Sepolia 測試網")
+		}
+		if command.Contract == "" {
+			return nil, errors.New("尚未配置存款箱合約地址")
+		}
+		if targetAddr != from {
+			return nil, errors.New("存款箱目標地址不符")
+		}
+		parsedAmount, err := ParseUnits(command.Amount, 18)
+		if err != nil {
+			return nil, err
+		}
+		if parsedAmount.Sign() <= 0 {
+			if action == ActionVaultWithdraw {
+				return nil, errors.New("提款金額必須大於 0")
+			}
+			return nil, errors.New("存款金額必須大於 0")
+		}
+		contractAddr = common.HexToAddress(string(command.Contract))
+		if err := VerifyContractBytecode(ctx, provider, contractAddr); err != nil {
+			return nil, err
+		}
+		txTo, amountRaw = contractAddr, parsedAmount
+		txValue = parsedAmount
+		methodName = "deposit()"
+		if action == ActionVaultDeposit {
+			calldata, err = ethVaultABI.Pack("deposit")
+		} else {
+			balance, balanceErr := QueryVaultBalanceOf(ctx, provider, contractAddr, from)
+			if balanceErr != nil {
+				return nil, balanceErr
+			}
+			if balance.Cmp(parsedAmount) < 0 {
+				return nil, errors.New("存款箱餘額不足以提款")
+			}
+			txValue = big.NewInt(0)
+			methodName = "withdraw(uint256)"
+			calldata, err = ethVaultABI.Pack("withdraw", parsedAmount)
+		}
+		if err != nil {
+			return nil, err
+		}
+		if err := SimulateVaultCall(ctx, provider, from, txTo, txValue, calldata); err != nil {
+			return nil, err
+		}
+
 	case ActionWrap, ActionUnwrap, ActionSwap:
 		if targetAddr != from {
 			return nil, errors.New("兌換資產只能回到自己的錢包")

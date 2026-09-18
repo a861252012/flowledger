@@ -46,7 +46,10 @@ func LimitTraffic(next http.Handler) http.Handler {
 		}
 		slots := reads
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			slots = writes
+			cleanPath := strings.TrimSuffix(r.URL.Path, "/")
+			if r.Method != http.MethodPost || (!strings.HasSuffix(cleanPath, "/api/wallet/token") && !strings.HasSuffix(cleanPath, "/api/wallet/exchange/pools")) {
+				slots = writes
+			}
 		}
 		select {
 		case slots <- struct{}{}:
