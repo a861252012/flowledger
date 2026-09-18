@@ -31,8 +31,8 @@
 | 4 | UserOperation Builder | 提供流暢建構器，支援由一般交易或 callData 建構 UserOp，包含 execute(address,uint256,bytes) callData 打包 | M2 | Survey R2 |
 | 5 | 純整數 PreVerificationGas 計算 | 依據未壓縮與序列化位元組統計零位元組 (4 gas) 與非零位元組 (16 gas)，加上固定開銷，純整數運算 | M2 | Survey R2 |
 | 6 | 費用參數計算與預估 | 支援 EIP-1559 費用參數估算（maxFeePerGas, maxPriorityFeePerGas），無浮點數運算 | M2 | Survey R2 |
-| 7 | 金鑰安全 Signer 介面與實作 | 定義 UserOpSigner 介面，實作 KeystoreSigner 與 PrivateKeySigner，簽署後立即抹除私鑰，產出 65 位元組 ECDSA 簽章 | M2 | Survey R2 |
-| 8 | Bundler JSON-RPC Client | 實作 BundlerClient，支援 eth_sendUserOperation、eth_estimateUserOperationGas、eth_getUserOperationReceipt 呼叫 | M3 | Survey R3 |
+| 7 | Signer 介面與實作 | 定義 UserOpSigner 介面，產出 65 位元組 ECDSA 簽章；KeystoreSigner 每次簽署後抹除解密私鑰，PrivateKeySigner 提供顯式 Wipe | M2 | Survey R2 |
+| 8 | Bundler JSON-RPC Client | 實作 `Client`，支援 eth_sendUserOperation、eth_estimateUserOperationGas、eth_getUserOperationReceipt 呼叫 | M3 | Survey R3 |
 | 9 | AA 錯誤碼解析與分類 | 支援標準 Bundler RPC 錯誤碼（-32500 至 -32508、-32602）與 EntryPoint 核心代碼（AA10 至 AA99）解析 | M3 | Survey R3 |
 | 10 | 執行緒安全 Mock Bundler 伺服器 | 實作 MockBundlerServer（使用 net/http/httptest），模擬 Bundler 回應、驗證失敗注入與收據輪詢生命週期 | M3 | Survey R3 |
 | 11 | Package 整合測試套件 (Tiers 1-4) | 涵蓋功能、極限邊界、跨功能組合與 Mock Bundler 黑箱場景；不代表 public bundler 鏈上 E2E | M4 (Integration Track) | Survey R4 |
@@ -88,13 +88,12 @@ func NewBuilder(entryPoint common.Address, chainID *big.Int) *Builder
 func (b *Builder) Build() (*UserOperation, error)
 ```
 
-### M3 ↔ External: BundlerClient
+### M3 ↔ External: Bundler JSON-RPC Client
 ```go
-type BundlerClient interface {
-    SendUserOperation(ctx context.Context, op *UserOperation, entryPoint common.Address) (common.Hash, error)
-    EstimateUserOperationGas(ctx context.Context, op *UserOperation, entryPoint common.Address) (*GasEstimate, error)
-    GetUserOperationReceipt(ctx context.Context, hash common.Hash) (*UserOperationReceipt, error)
-}
+func NewClient(endpoint string) (*Client, error)
+func (c *Client) SendUserOperation(ctx context.Context, op *UserOperation, entryPoint common.Address) (common.Hash, error)
+func (c *Client) EstimateUserOperationGas(ctx context.Context, op *UserOperation, entryPoint common.Address) (*GasEstimate, error)
+func (c *Client) GetUserOperationReceipt(ctx context.Context, hash common.Hash) (*UserOperationReceipt, error)
 ```
 
 ## Code Layout
@@ -108,4 +107,4 @@ type BundlerClient interface {
 - `internal/wallet/erc4337/mock_server.go`：執行緒安全 Mock Bundler Server（供單元與端對端測試共用）。
 - `internal/wallet/erc4337/erc4337_test.go`：單元測試、官方測試向量驗證、簽章還原測試。
 - `internal/wallet/erc4337/client_test.go`：RPC 客戶端、Mock 伺服器、AA 錯誤模擬與收據輪詢測試。
-- `internal/wallet/erc4337/*_test.go`：整合與對抗性測試套件（包含 71 個測試與模糊測試函式、對抗性壓力測試與 Mock Bundler 驗證）。
+- `internal/wallet/erc4337/*_test.go`：單元、整合、Fuzz、對抗性壓力測試與 Mock Bundler 驗證；目前清單可用 `go test -list . ./internal/wallet/erc4337` 查詢。

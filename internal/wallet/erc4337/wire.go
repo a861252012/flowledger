@@ -41,15 +41,15 @@ func userOperationToRPC(op *UserOperation) userOperationRPC {
 	return userOperationRPC{
 		Sender:               hexutil.Encode(op.Sender[:]),
 		Nonce:                encodeBigHex(op.Nonce),
-		InitCode:             encodeBytesHex(op.InitCode),
-		CallData:             encodeBytesHex(op.CallData),
+		InitCode:             hexutil.Encode(op.InitCode),
+		CallData:             hexutil.Encode(op.CallData),
 		CallGasLimit:         encodeBigHex(op.CallGasLimit),
 		VerificationGasLimit: encodeBigHex(op.VerificationGasLimit),
 		PreVerificationGas:   encodeBigHex(op.PreVerificationGas),
 		MaxFeePerGas:         encodeBigHex(op.MaxFeePerGas),
 		MaxPriorityFeePerGas: encodeBigHex(op.MaxPriorityFeePerGas),
-		PaymasterAndData:     encodeBytesHex(op.PaymasterAndData),
-		Signature:            encodeBytesHex(op.Signature),
+		PaymasterAndData:     hexutil.Encode(op.PaymasterAndData),
+		Signature:            hexutil.Encode(op.Signature),
 	}
 }
 
@@ -57,13 +57,13 @@ func packedUserOperationToRPC(op *PackedUserOperation) packedUserOperationRPC {
 	return packedUserOperationRPC{
 		Sender:             hexutil.Encode(op.Sender[:]),
 		Nonce:              encodeBigHex(op.Nonce),
-		InitCode:           encodeBytesHex(op.InitCode),
-		CallData:           encodeBytesHex(op.CallData),
+		InitCode:           hexutil.Encode(op.InitCode),
+		CallData:           hexutil.Encode(op.CallData),
 		AccountGasLimits:   "0x" + hex.EncodeToString(op.AccountGasLimits[:]),
 		PreVerificationGas: encodeBigHex(op.PreVerificationGas),
 		GasFees:            "0x" + hex.EncodeToString(op.GasFees[:]),
-		PaymasterAndData:   encodeBytesHex(op.PaymasterAndData),
-		Signature:          encodeBytesHex(op.Signature),
+		PaymasterAndData:   hexutil.Encode(op.PaymasterAndData),
+		Signature:          hexutil.Encode(op.Signature),
 	}
 }
 

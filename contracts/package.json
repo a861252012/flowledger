@@ -6,7 +6,7 @@
     "check": "node compile.js --check"
   },
   "devDependencies": {
-    "solc": "0.8.28"
+    "solc": "0.8.37"
   },
   "overrides": {
     "solc": {

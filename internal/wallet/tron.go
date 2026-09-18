@@ -208,7 +208,7 @@ func (s *TronService) save(records []tronJournalRecord) error {
 	}
 	data, err := json.Marshal(stored)
 	if err == nil {
-		err = s.keys.atomicWriteFile(filepath.Join(s.dir, "transactions.json"), data, 0600)
+		err = atomicWriteFile(filepath.Join(s.dir, "transactions.json"), data, 0600)
 	}
 	if err != nil {
 		s.fault = true

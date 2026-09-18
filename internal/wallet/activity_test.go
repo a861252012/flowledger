@@ -1,9 +1,7 @@
 package wallet
 
 import (
-	"bytes"
 	"context"
-	"encoding/csv"
 	"os"
 	"path/filepath"
 	"strings"
@@ -44,21 +42,6 @@ func TestActivityIndexDeduplicatesAndSurvivesRestart(t *testing.T) {
 	}
 	if _, err := next.Activity(context.Background(), 2); err == nil {
 		t.Fatal("out of range page accepted")
-	}
-}
-
-func TestActivityCSVUsesRawEvidence(t *testing.T) {
-	response := &ActivityResponse{Transactions: []*chain.Activity{{Hash: "0x" + strings.Repeat("a", 64), State: "succeeded", Block: "10", Movements: []chain.Movement{{Kind: "receive", Asset: "ETH", Raw: "1000000000000000001", Counterparty: "0x" + strings.Repeat("1", 40), Evidence: "transaction.value"}}}}}
-	var output bytes.Buffer
-	if err := WriteActivityCSV(&output, response); err != nil {
-		t.Fatal(err)
-	}
-	rows, err := csv.NewReader(&output).ReadAll()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(rows) != 2 || rows[1][0] != "11155111" || rows[1][7] != "1000000000000000001" {
-		t.Fatalf("lossy CSV %v", rows)
 	}
 }
 

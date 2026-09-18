@@ -15,6 +15,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/a861252012/testnet-wallet-lab/internal/chain"
 )
 
 type network struct {
@@ -23,11 +25,11 @@ type network struct {
 }
 
 var networks = map[string]network{
-	"sepolia":  {11155111, "https://ethereum-sepolia-rpc.publicnode.com"},
-	"arbitrum": {421614, "https://sepolia-rollup.arbitrum.io/rpc"},
-	"base":     {84532, "https://sepolia.base.org"},
-	"optimism": {11155420, "https://sepolia.optimism.io"},
-	"polygon":  {80002, "https://polygon-amoy.drpc.org"},
+	"sepolia":  {chain.SepoliaID, "https://ethereum-sepolia-rpc.publicnode.com"},
+	"arbitrum": {chain.ArbitrumSepoliaID, "https://sepolia-rollup.arbitrum.io/rpc"},
+	"base":     {chain.BaseSepoliaID, "https://sepolia.base.org"},
+	"optimism": {chain.OptimismSepoliaID, "https://sepolia.optimism.io"},
+	"polygon":  {chain.PolygonAmoyID, "https://polygon-amoy.drpc.org"},
 }
 
 const tronEndpoint = "https://api.shasta.trongrid.io"

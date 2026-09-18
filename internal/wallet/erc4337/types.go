@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math/big"
+	"slices"
 	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -35,9 +36,6 @@ var (
 var (
 	// 最大 uint128 邊界值 (2^128 - 1)
 	maxUint128 = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 128), big.NewInt(1))
-
-	// 最大 uint256 邊界值 (2^256 - 1)
-	maxUint256 = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1))
 )
 
 var (
@@ -86,21 +84,6 @@ type PackedUserOperation struct {
 	Signature          []byte         `json:"signature" abi:"signature"`
 }
 
-// copyBytes 進行位元組切片之深拷貝
-func copyBytes(src []byte) []byte {
-	if src == nil {
-		return nil
-	}
-	out := make([]byte, len(src))
-	copy(out, src)
-	return out
-}
-
-// IsCanonicalEntryPoint 檢查給定之合約地址是否為官方認可之 Canonical EntryPoint 地址
-func IsCanonicalEntryPoint(addr common.Address) bool {
-	return addr == CanonicalEntryPointV06 || addr == CanonicalEntryPointV07
-}
-
 // Clone 產生 UserOperation 之完整深拷貝，避免切片與指標共用
 func (op *UserOperation) Clone() *UserOperation {
 	if op == nil {
@@ -108,10 +91,10 @@ func (op *UserOperation) Clone() *UserOperation {
 	}
 	cp := &UserOperation{
 		Sender:           op.Sender,
-		InitCode:         copyBytes(op.InitCode),
-		CallData:         copyBytes(op.CallData),
-		PaymasterAndData: copyBytes(op.PaymasterAndData),
-		Signature:        copyBytes(op.Signature),
+		InitCode:         slices.Clone(op.InitCode),
+		CallData:         slices.Clone(op.CallData),
+		PaymasterAndData: slices.Clone(op.PaymasterAndData),
+		Signature:        slices.Clone(op.Signature),
 	}
 	if op.Nonce != nil {
 		cp.Nonce = new(big.Int).Set(op.Nonce)
@@ -143,10 +126,10 @@ func (op *PackedUserOperation) Clone() *PackedUserOperation {
 		Sender:           op.Sender,
 		AccountGasLimits: op.AccountGasLimits,
 		GasFees:          op.GasFees,
-		InitCode:         copyBytes(op.InitCode),
-		CallData:         copyBytes(op.CallData),
-		PaymasterAndData: copyBytes(op.PaymasterAndData),
-		Signature:        copyBytes(op.Signature),
+		InitCode:         slices.Clone(op.InitCode),
+		CallData:         slices.Clone(op.CallData),
+		PaymasterAndData: slices.Clone(op.PaymasterAndData),
+		Signature:        slices.Clone(op.Signature),
 	}
 	if op.Nonce != nil {
 		cp.Nonce = new(big.Int).Set(op.Nonce)
@@ -233,13 +216,13 @@ func (op *UserOperation) ToPacked() (*PackedUserOperation, error) {
 	packed := &PackedUserOperation{
 		Sender:             op.Sender,
 		Nonce:              new(big.Int).Set(op.Nonce),
-		InitCode:           copyBytes(op.InitCode),
-		CallData:           copyBytes(op.CallData),
+		InitCode:           slices.Clone(op.InitCode),
+		CallData:           slices.Clone(op.CallData),
 		AccountGasLimits:   accountGasLimits,
 		PreVerificationGas: new(big.Int).Set(op.PreVerificationGas),
 		GasFees:            gasFees,
-		PaymasterAndData:   copyBytes(op.PaymasterAndData),
-		Signature:          copyBytes(op.Signature),
+		PaymasterAndData:   slices.Clone(op.PaymasterAndData),
+		Signature:          slices.Clone(op.Signature),
 	}
 	return packed, nil
 }
@@ -256,15 +239,15 @@ func (op *PackedUserOperation) Unpack() (*UserOperation, error) {
 	userOp := &UserOperation{
 		Sender:               op.Sender,
 		Nonce:                new(big.Int).Set(op.Nonce),
-		InitCode:             copyBytes(op.InitCode),
-		CallData:             copyBytes(op.CallData),
+		InitCode:             slices.Clone(op.InitCode),
+		CallData:             slices.Clone(op.CallData),
 		CallGasLimit:         callGasLimit,
 		VerificationGasLimit: verificationGasLimit,
 		PreVerificationGas:   new(big.Int).Set(op.PreVerificationGas),
 		MaxFeePerGas:         maxFeePerGas,
 		MaxPriorityFeePerGas: maxPriorityFeePerGas,
-		PaymasterAndData:     copyBytes(op.PaymasterAndData),
-		Signature:            copyBytes(op.Signature),
+		PaymasterAndData:     slices.Clone(op.PaymasterAndData),
+		Signature:            slices.Clone(op.Signature),
 	}
 	return userOp, nil
 }
@@ -286,14 +269,6 @@ func decodeBigHex(s string) (*big.Int, error) {
 		s = "0x" + s[2:]
 	}
 	return hexutil.DecodeBig(s)
-}
-
-// encodeBytesHex 將位元組切片編碼為 0x 前綴十六進位字串，空切片輸出 "0x"
-func encodeBytesHex(b []byte) string {
-	if len(b) == 0 {
-		return "0x"
-	}
-	return hexutil.Encode(b)
 }
 
 // decodeBytesHex 將 0x 前綴十六進位字串解碼為位元組切片，"0x" 或 "" 輸出空切片

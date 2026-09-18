@@ -2,6 +2,9 @@ name: Verify
 on: [push, pull_request]
 permissions:
   contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   go:
     runs-on: ubuntu-latest
@@ -11,7 +14,7 @@ jobs:
       - run: docker build -t flowledger-test .
       - run: docker run --rm -v "$PWD:/app:ro" -v test_modules:/go/pkg/mod flowledger-test go mod download
       - run: mkdir -p /tmp/flowledger-results
-      - run: docker run --rm --network none -v "$PWD:/app:ro" -v test_modules:/go/pkg/mod:ro -v /tmp/flowledger-results:/results -e GOCACHE=/tmp/cache flowledger-test sh -c 'go test -race -count=1 -coverprofile=/results/coverage.out ./... && go vet ./... && test -z "$(gofmt -l cmd internal contracts)" && go fix -diff ./... > /results/gofix.diff && test ! -s /results/gofix.diff'
+      - run: docker run --rm --network none -v "$PWD:/app:ro" -v test_modules:/go/pkg/mod:ro -v /tmp/flowledger-results:/results -e GOCACHE=/tmp/cache flowledger-test sh -c 'go test -race -count=1 -coverprofile=/results/coverage.out ./... && go vet ./... && test -z "$(gofmt -l cmd internal contracts tests)" && go fix -diff ./... > /results/gofix.diff && test ! -s /results/gofix.diff'
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: go-coverage
@@ -33,6 +36,9 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5
+        with:
+          go-version-file: go.mod
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
@@ -41,6 +47,7 @@ jobs:
       - run: npm ci --prefix tests/browser
       - run: cd tests/browser && npx playwright install --with-deps chromium
       - run: npm test --prefix tests/browser
+      - run: npm run test:e2e --prefix tests/browser
   deployment:
     strategy:
       fail-fast: false
@@ -83,6 +90,25 @@ jobs:
           printf 'digest=%s\n' "$digest" >> "$GITHUB_OUTPUT"
       - if: always()
         run: docker logout ghcr.io
+  live:
+    needs: publish
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DEMO_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: tests/browser/package-lock.json
+      - run: npm ci --prefix tests/browser
+      - run: cd tests/browser && npx playwright install --with-deps chromium
+      - name: Verify deployed revision and browser flows
+        env:
+          EXPECTED_REVISION: ${{ github.sha }}
+          WALLET_DEMO_URL: https://wallet.tedlin.fyi
+        run: npm run test:live --prefix tests/browser
   vulnerabilities:
     runs-on: ubuntu-latest
     timeout-minutes: 15

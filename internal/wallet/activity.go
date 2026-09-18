@@ -3,15 +3,12 @@ package wallet
 import (
 	"cmp"
 	"context"
-	"encoding/csv"
 	"encoding/json"
 	"errors"
-	"io"
 	"math/big"
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"sync"
 
 	"github.com/a861252012/testnet-wallet-lab/internal/chain"
@@ -88,7 +85,7 @@ func (s *Service) addActivityHashes(ids []string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	if err := s.keystore.atomicWriteFile(filepath.Join(s.walletDir, "activity.json"), data, 0600); err != nil {
+	if err := atomicWriteFile(filepath.Join(s.walletDir, "activity.json"), data, 0600); err != nil {
 		return 0, err
 	}
 	return count, nil
@@ -234,29 +231,4 @@ func (s *Service) Activity(ctx context.Context, page int) (*ActivityResponse, er
 	}
 	slices.SortFunc(response.Totals, func(a, b ActivityTotal) int { return cmp.Compare(a.Asset, b.Asset) })
 	return response, nil
-}
-
-func WriteActivityCSV(w io.Writer, response *ActivityResponse) error {
-	writer := csv.NewWriter(w)
-	chainID := response.ChainID
-	if chainID == 0 {
-		chainID = chain.SepoliaID
-	}
-	if err := writer.Write([]string{"chain_id", "hash", "state", "block", "block_time", "kind", "asset", "amount_raw", "counterparty", "evidence"}); err != nil {
-		return err
-	}
-	for _, tx := range response.Transactions {
-		if len(tx.Movements) == 0 {
-			if err := writer.Write([]string{strconv.FormatInt(chainID, 10), tx.Hash, tx.State, tx.Block, tx.BlockTime, "", "", "", "", ""}); err != nil {
-				return err
-			}
-		}
-		for _, m := range tx.Movements {
-			if err := writer.Write([]string{strconv.FormatInt(chainID, 10), tx.Hash, tx.State, tx.Block, tx.BlockTime, m.Kind, m.Asset, m.Raw, m.Counterparty, m.Evidence}); err != nil {
-				return err
-			}
-		}
-	}
-	writer.Flush()
-	return writer.Error()
 }

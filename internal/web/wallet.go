@@ -447,8 +447,9 @@ func registerWalletRoutes(mux *http.ServeMux, ws *wallet.Service) {
 			return
 		}
 		if r.URL.Query().Get("format") == "csv" {
+			slug := chain.NetworkSlug(ws.ChainID())
 			w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-			w.Header().Set("Content-Disposition", "attachment; filename=flowledger-sepolia-activity.csv")
+			w.Header().Set("Content-Disposition", "attachment; filename=flowledger-"+slug+"-activity.csv")
 			_ = writeEVMActivityCSV(w, newEVMActivityResponse(result))
 			return
 		}

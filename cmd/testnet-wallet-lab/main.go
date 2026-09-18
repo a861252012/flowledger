@@ -214,6 +214,9 @@ func run() error {
 	}
 	faucetHandler := web.NewFaucet(faucet, solWallet, walletService.CSRFToken())
 	workspace := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/healthz" {
+			w.Header().Set("X-App-Version", version)
+		}
 		if r.URL.Path == "/api/faucet" || strings.HasPrefix(r.URL.Path, "/api/faucet/") {
 			faucetHandler.ServeHTTP(w, r)
 			return

@@ -230,7 +230,7 @@ func (km *KeystoreManager) Create(password string) (*CreateResponse, error) {
 		return nil, err
 	}
 
-	if err := km.atomicWriteFile(km.keystorePath(), keyJSON, 0600); err != nil {
+	if err := atomicWriteFile(km.keystorePath(), keyJSON, 0600); err != nil {
 		return nil, err
 	}
 
@@ -294,7 +294,7 @@ func (km *KeystoreManager) Import(mnemonic, password string) (*ImportResponse, e
 		return nil, err
 	}
 
-	if err := km.atomicWriteFile(km.keystorePath(), keyJSON, 0600); err != nil {
+	if err := atomicWriteFile(km.keystorePath(), keyJSON, 0600); err != nil {
 		return nil, err
 	}
 
@@ -390,7 +390,7 @@ func (km *KeystoreManager) ImportKeystore(data json.RawMessage, password, newPas
 	if err != nil {
 		return nil, err
 	}
-	if err := km.atomicWriteFile(km.keystorePath(), encrypted, 0600); err != nil {
+	if err := atomicWriteFile(km.keystorePath(), encrypted, 0600); err != nil {
 		return nil, err
 	}
 	return &ImportResponse{Address: key.Address.Hex()}, nil
@@ -419,7 +419,7 @@ func (km *KeystoreManager) ChangePassword(password, newPassword string) error {
 	if err != nil {
 		return err
 	}
-	return km.atomicWriteFile(km.keystorePath(), encrypted, 0600)
+	return atomicWriteFile(km.keystorePath(), encrypted, 0600)
 }
 
 // DecryptKey decrypts the keystore file using the provided password.
@@ -490,10 +490,6 @@ func atomicWriteFile(dest string, data []byte, perm os.FileMode) error {
 	}
 	defer d.Close()
 	return d.Sync()
-}
-
-func (km *KeystoreManager) atomicWriteFile(dest string, data []byte, perm os.FileMode) error {
-	return atomicWriteFile(dest, data, perm)
 }
 
 func wipeBytes(b []byte) {

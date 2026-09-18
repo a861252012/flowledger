@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/a861252012/testnet-wallet-lab/internal/chain"
 	"github.com/a861252012/testnet-wallet-lab/internal/wallet"
 )
 
@@ -30,10 +31,10 @@ type networkDefinition struct {
 }
 
 var networkDefinitions = [...]networkDefinition{
-	{slug: "arbitrum", envPrefix: "ARBITRUM_SEPOLIA", defaultRPC: "https://sepolia-rollup.arbitrum.io/rpc", chainID: 421614},
-	{slug: "base", envPrefix: "BASE_SEPOLIA", defaultRPC: "https://sepolia.base.org", chainID: 84532},
-	{slug: "optimism", envPrefix: "OP_SEPOLIA", defaultRPC: "https://sepolia.optimism.io", chainID: 11155420},
-	{slug: "polygon", envPrefix: "POLYGON_AMOY", defaultRPC: "https://polygon-amoy.drpc.org", chainID: 80002},
+	{slug: "arbitrum", envPrefix: "ARBITRUM_SEPOLIA", defaultRPC: "https://sepolia-rollup.arbitrum.io/rpc", chainID: chain.ArbitrumSepoliaID},
+	{slug: "base", envPrefix: "BASE_SEPOLIA", defaultRPC: "https://sepolia.base.org", chainID: chain.BaseSepoliaID},
+	{slug: "optimism", envPrefix: "OP_SEPOLIA", defaultRPC: "https://sepolia.optimism.io", chainID: chain.OptimismSepoliaID},
+	{slug: "polygon", envPrefix: "POLYGON_AMOY", defaultRPC: "https://polygon-amoy.drpc.org", chainID: chain.PolygonAmoyID},
 }
 
 // networkRuntimeConfig holds the checked settings used to start each network service.

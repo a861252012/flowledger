@@ -1,15 +1,39 @@
 package web
 
 import (
+	"bytes"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/a861252012/testnet-wallet-lab/internal/chain"
 	"github.com/a861252012/testnet-wallet-lab/internal/wallet"
 )
+
+func TestEVMActivityCSVUsesRawEvidence(t *testing.T) {
+	response := &wallet.ActivityResponse{Transactions: []*chain.Activity{{
+		Hash: "0x" + strings.Repeat("a", 64), State: "succeeded", Block: "10",
+		Movements: []chain.Movement{{
+			Kind: "receive", Asset: "ETH", Raw: "1000000000000000001",
+			Counterparty: "0x" + strings.Repeat("1", 40), Evidence: "transaction.value",
+		}},
+	}}}
+	var output bytes.Buffer
+	if err := writeEVMActivityCSV(&output, newEVMActivityResponse(response)); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := csv.NewReader(&output).ReadAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 || rows[1][0] != "11155111" || rows[1][7] != "1000000000000000001" || rows[1][9] != "transaction.value" {
+		t.Fatalf("lossy CSV %v", rows)
+	}
+}
 
 func TestEVMDTOsPreserveJSONContract(t *testing.T) {
 	now := time.Date(2026, time.September, 16, 1, 2, 3, 0, time.UTC)

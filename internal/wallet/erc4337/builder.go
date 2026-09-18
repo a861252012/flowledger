@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"slices"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
@@ -71,7 +72,6 @@ func init() {
 }
 
 var (
-	ErrIncompleteBuilder   = errors.New("erc4337: builder 缺少必要參數")
 	ErrInvalidExecuteVal   = errors.New("erc4337: execute 轉帳數值不得為負數")
 	ErrBatchLengthMismatch = errors.New("erc4337: executeBatch 參數陣列長度不一致")
 	ErrEmptyBatch          = errors.New("erc4337: executeBatch 批次清單不得為空")
@@ -131,13 +131,13 @@ func (b *Builder) SetNonce(nonce *big.Int) *Builder {
 
 // SetInitCode 設定部署合約用之 InitCode
 func (b *Builder) SetInitCode(initCode []byte) *Builder {
-	b.initCode = copyBytes(initCode)
+	b.initCode = slices.Clone(initCode)
 	return b
 }
 
 // SetCallData 設定直接執行之 CallData
 func (b *Builder) SetCallData(callData []byte) *Builder {
-	b.callData = copyBytes(callData)
+	b.callData = slices.Clone(callData)
 	return b
 }
 
@@ -299,13 +299,13 @@ func (b *Builder) EstimateGasFees(baseFee, priorityFee *big.Int) *Builder {
 
 // SetPaymasterAndData 設定 Paymaster 地址與驗證參數
 func (b *Builder) SetPaymasterAndData(paymasterAndData []byte) *Builder {
-	b.paymasterAndData = copyBytes(paymasterAndData)
+	b.paymasterAndData = slices.Clone(paymasterAndData)
 	return b
 }
 
 // SetSignature 設定簽名
 func (b *Builder) SetSignature(sig []byte) *Builder {
-	b.signature = copyBytes(sig)
+	b.signature = slices.Clone(sig)
 	return b
 }
 
@@ -425,15 +425,15 @@ func (b *Builder) Build() (*UserOperation, error) {
 	op := &UserOperation{
 		Sender:               b.sender,
 		Nonce:                new(big.Int).Set(b.nonce),
-		InitCode:             copyBytes(b.initCode),
-		CallData:             copyBytes(b.callData),
+		InitCode:             slices.Clone(b.initCode),
+		CallData:             slices.Clone(b.callData),
 		CallGasLimit:         new(big.Int).Set(b.callGasLimit),
 		VerificationGasLimit: new(big.Int).Set(b.verificationGasLimit),
 		PreVerificationGas:   new(big.Int).Set(b.preVerificationGas),
 		MaxFeePerGas:         new(big.Int).Set(b.maxFeePerGas),
 		MaxPriorityFeePerGas: new(big.Int).Set(b.maxPriorityFeePerGas),
-		PaymasterAndData:     copyBytes(b.paymasterAndData),
-		Signature:            copyBytes(b.signature),
+		PaymasterAndData:     slices.Clone(b.paymasterAndData),
+		Signature:            slices.Clone(b.signature),
 	}
 
 	if err := op.Validate(); err != nil {
@@ -456,6 +456,6 @@ func (b *Builder) BuildAndSign(signer UserOpSigner) (*UserOperation, error) {
 		return nil, fmt.Errorf("erc4337: 簽署 UserOperation 失敗: %w", err)
 	}
 	op.Signature = sig
-	b.signature = copyBytes(sig)
+	b.signature = slices.Clone(sig)
 	return op, nil
 }

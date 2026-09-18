@@ -110,6 +110,11 @@ func (s *Service) CSRFToken() string {
 	return s.csrfToken
 }
 
+// ChainID returns the connected client's chain ID.
+func (s *Service) ChainID() int64 {
+	return s.client.ChainID()
+}
+
 func sendResponseFromRecord(record *JournalRecord, state JournalState) *SendResponse {
 	return &SendResponse{
 		Hash:      string(record.Hash),

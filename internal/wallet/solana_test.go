@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	sol "github.com/gagliardetto/solana-go"
@@ -17,6 +18,81 @@ func TestSLIP10PublishedEd25519Vector(t *testing.T) {
 	key := deriveEd25519(seed, []uint32{0})
 	if hex.EncodeToString(key) != "68e0fe46dfb67e368c75379acec591dad19df3cde26e63b93a8e704f1dade7a3" {
 		t.Fatal("SLIP-0010 vector mismatch")
+	}
+}
+
+func TestSolanaConfirmedFailureRefreshesUntilFinalized(t *testing.T) {
+	for _, executionFailed := range []bool{true, false} {
+		name := "finalized_success"
+		if executionFailed {
+			name = "finalized_failure"
+		}
+		t.Run(name, func(t *testing.T) {
+			var queries atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var req struct {
+					ID     any    `json:"id"`
+					Method string `json:"method"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+					t.Error(err)
+					return
+				}
+				var result any
+				switch req.Method {
+				case "getGenesisHash":
+					result = SolanaDevnetGenesis
+				case "getBlockHeight":
+					result = 100
+				case "getSignatureStatuses":
+					query := queries.Add(1)
+					status := map[string]any{"slot": 100, "err": nil, "confirmationStatus": "finalized", "confirmations": nil}
+					if query == 1 {
+						status["confirmationStatus"] = "confirmed"
+					}
+					if query == 1 || executionFailed {
+						status["err"] = map[string]any{"InstructionError": []any{0, "InvalidArgument"}}
+					}
+					result = map[string]any{"context": map[string]int{"slot": 100}, "value": []any{status}}
+				default:
+					t.Errorf("unexpected Solana RPC %s", req.Method)
+				}
+				json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": result})
+			}))
+			defer server.Close()
+			s, err := NewSolanaService(server.URL, t.TempDir(), 2)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer s.Close()
+			s.records = []solanaJournalRecord{{Signature: solanaSignature(sol.Signature{}.String()), State: "submitted", LastValid: 200}}
+			history, err := s.History(context.Background())
+			if err != nil || len(history) != 1 {
+				t.Fatalf("confirmed history: %+v, %v", history, err)
+			}
+			if history[0].State != "execution_failed" || history[0].Finalized {
+				t.Fatalf("confirmed failure must remain unfinalized: %+v", history[0])
+			}
+			if s.hasPending() {
+				t.Fatal("execution_failed transaction must not block hasPending")
+			}
+			wantState := "finalized"
+			if executionFailed {
+				wantState = "execution_failed"
+			}
+			for range 2 {
+				history, err = s.History(context.Background())
+				if err != nil || len(history) != 1 {
+					t.Fatalf("finalized history: %+v, %v", history, err)
+				}
+				if history[0].State != wantState || !history[0].Finalized {
+					t.Fatalf("expected finalized state %q: %+v", wantState, history[0])
+				}
+			}
+			if queries.Load() != 2 {
+				t.Fatalf("expected two status queries, got %d", queries.Load())
+			}
+		})
 	}
 }
 func TestSolanaBackupAndBoundBroadcast(t *testing.T) {

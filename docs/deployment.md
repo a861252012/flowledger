@@ -70,11 +70,12 @@ Compose 只監聽主機 `127.0.0.1:8090`；wallet volume UID/GID 10001、0700。
 ## CI/CD：VM 主動拉取
 
 ```text
-push main → Go/race/vet + Browser + 雙架構 image smoke + govulncheck
+push main → Go/race/vet + Solidity + Browser fixtures/E2E + 雙架構 image smoke + govulncheck
           → build/test release image → GHCR sha-<commit>
 VM 每兩分鐘 → 讀取 main SHA → 拉取對應 image → 固定 digest + revision 驗證
           → 部署鎖 → 再查 main → 停舊版 → 啟新版 → HTTP 權限驗收
           → 成功記錄 current-image，失敗回退原 image
+CI live job → 等待 HTTPS /healthz 回報相同 commit → Chromium 桌面／手機導覽驗證
 ```
 
 Repository Variables：`DEMO_DEPLOY_ENABLED=true`（所有前置完成後）、`DEMO_RUNNER=ubuntu-latest`。
@@ -91,7 +92,8 @@ sudo systemctl enable --now wallet-demo-update.timer
 ```
 
 timer 在前一次結束後約 120 秒再檢查，不是即時 webhook。CI 未完成/失敗、API/registry 失聯時不停止現有服務。
-GitHub Actions 成功只證明 image 發布成功；遠端成功須查 journal、current-image 與 binary version。
+`publish` 成功代表 image 已發布；後續 `live` job 最多等待 10 分鐘，要求 HTTPS `/healthz` 的 `X-App-Version` 等於這次 commit，接著測試 EVM 面板、Solana/TRON 網路切換保留活動頁、手機選單與頁面錯誤。版本未更新或瀏覽器驗證失敗，workflow 會標示失敗。`live` 不簽名、送款或建立錢包；存款箱未配置時只驗證停用狀態，合約存提款由部署前的本機模擬 EVM E2E 驗證。
+這是「push 後自動更新」，所需時間為 CI/build 加上最長約兩分鐘的輪詢等待及映像檔下載／啟動；不是 push 當下立即切換。連續推送時會取消同分支尚未完成的舊 workflow，server 也只接受最新 main。
 無 CI 入站 SSH/Access 或 GitHub deploy secret。
 
 部署腳本/Compose 為 root-owned，main push 只更新應用 image，不覆寫基礎權限設定。
@@ -112,7 +114,7 @@ docker build -f Dockerfile.deploy --build-arg APP_VERSION=local-test -t wallet-d
 python3 tests/deployment/smoke.py wallet-demo-test local-test
 ```
 
-上線前仍需：實際 VM 安裝、免費 Tunnel/WAF/HTTPS、匿名外部查詢與管理者拒絕測試、VM 直連拒絕、首次 main CI→遠端驗收。
+首次安裝須完成 VM、Tunnel/WAF/HTTPS、匿名外部查詢與管理者拒絕測試、VM 直連拒絕，以及 main CI→遠端驗收；下方保留歷次實測紀錄。
 備份應在持有 deploy.lock 且容器停止時封存 wallet，加密保存於 VM 外；隔離無網路還原測試不可省略。
 私人備份目的地為管理者 Mac；不要把本機 smoke 當成已有錢包資料的災難復原證據。
 所有安全控制降低風險，不保證沒有漏洞；沒有執行真實鏈交易。

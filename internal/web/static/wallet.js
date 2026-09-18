@@ -782,8 +782,8 @@
     } catch (error) { $('password-feedback').textContent = errorMessage(error); }
     finally { $('password-form').reset(); button.disabled = false; }
   });
-  $('account-select').addEventListener('change', () => { const id = $('account-select').value; location.href = (id ? '/accounts/' + id : '') + networkSuffix + '/'; });
-  function accountURL(id) { return (id ? '/accounts/' + id : '') + networkSuffix + '/'; }
+  $('account-select').addEventListener('change', () => { const id = $('account-select').value; location.href = (id ? '/accounts/' + id : '') + networkSuffix + '/' + (location.hash || ''); });
+  function accountURL(id) { return (id ? '/accounts/' + id : '') + networkSuffix + '/' + (location.hash || ''); }
 
   function renderAccountSelect() {
     $('account-select').replaceChildren(...accounts.filter(item => !item.archived).map(item => {

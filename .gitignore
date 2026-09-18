@@ -24,3 +24,4 @@ __pycache__/
 # Node & browser tests
 node_modules/
 test-results/
+.agents/

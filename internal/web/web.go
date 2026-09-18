@@ -101,26 +101,16 @@ func respond(w http.ResponseWriter, result any, err error) {
 // NormalizeWorkspaceRedirect checks if a workspace request path is missing a required trailing slash
 // and returns the canonical redirect path if needed.
 func NormalizeWorkspaceRedirect(path string) (string, bool) {
-	if path == "/solana" {
-		return "/solana/", true
-	}
-	if path == "/tron" {
-		return "/tron/", true
+	if path == "/solana" || path == "/tron" {
+		return path + "/", true
 	}
 	if after, ok := strings.CutPrefix(path, "/accounts/"); ok {
-		trimmed := after
-		if !strings.Contains(trimmed, "/") {
-			if trimmed != "" {
-				return path + "/", true
-			}
-			return "", false
+		account, rest, hasSlash := strings.Cut(after, "/")
+		if !hasSlash && account != "" {
+			return path + "/", true
 		}
-		pieces := strings.SplitN(trimmed, "/", 2)
-		if len(pieces) == 2 && strings.HasPrefix(pieces[1], "net/") {
-			slugRest := strings.TrimPrefix(pieces[1], "net/")
-			if slugRest != "" && !strings.Contains(slugRest, "/") {
-				return path + "/", true
-			}
+		if slug, ok := strings.CutPrefix(rest, "net/"); ok && slug != "" && !strings.Contains(slug, "/") {
+			return path + "/", true
 		}
 	}
 	return "", false

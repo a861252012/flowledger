@@ -20,48 +20,24 @@ var (
 	ErrReceiptNotFound   = errors.New("erc4337: 尚未查詢到收據 (仍處於 pending 狀態)")
 )
 
-// BundlerClient 定義與 EIP-4337 打包器 (Bundler) 節點互動之標準介面
-type BundlerClient interface {
-	SendUserOperation(ctx context.Context, op *UserOperation, entryPoint common.Address) (common.Hash, error)
-	EstimateUserOperationGas(ctx context.Context, op *UserOperation, entryPoint common.Address) (*GasEstimate, error)
-	GetUserOperationReceipt(ctx context.Context, hash common.Hash) (*UserOperationReceipt, error)
-	WaitForUserOperationReceipt(ctx context.Context, hash common.Hash, pollInterval time.Duration) (*UserOperationReceipt, error)
-}
-
-// Client 實作 BundlerClient 介面
+// Client 呼叫 Bundler JSON-RPC。
 type Client struct {
 	endpoint   string
 	httpClient *http.Client
 	nextID     atomic.Uint64
 }
 
-// ClientOption 提供客製化 Client 之選項
-type ClientOption func(*Client)
-
-// WithHTTPClient 自訂底層 http.Client
-func WithHTTPClient(httpClient *http.Client) ClientOption {
-	return func(c *Client) {
-		if httpClient != nil {
-			c.httpClient = httpClient
-		}
-	}
-}
-
 // NewClient 建立 Bundler JSON-RPC 客戶端
-func NewClient(endpoint string, opts ...ClientOption) (*Client, error) {
+func NewClient(endpoint string) (*Client, error) {
 	if endpoint == "" {
 		return nil, ErrClientNilEndpoint
 	}
-	c := &Client{
+	return &Client{
 		endpoint: endpoint,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
-	}
-	for _, opt := range opts {
-		opt(c)
-	}
-	return c, nil
+	}, nil
 }
 
 func (c *Client) call(ctx context.Context, method string, params []any, result any) error {

@@ -14,7 +14,7 @@ const vaultContract = '0x5555555555555555555555555555555555555555';
 let vaultEnabled = true, vaultFailure = false, vaultQuoteFailure = false, vaultDeposit = 20000000000000000n;
 let accountFixtures = [{id:'',name:'主要錢包',address,archived:false}];
 let accountWrites = 0, accountFailure = false;
-let walletCSRF='fixture';
+let walletCSRF='fixture', solCSRF='fixture', tronCSRF='fixture';
 let enforceTokenLimit=false, activeTokenQueries=0, tokenLimitHits=0;
 let exists = true, balanceFailure = false, loseSendResponse = false, history = [], sent = [], quotes = new Map(), allowances = new Map();
 let tronExists=false,tronHistory=[],tronSends=0;const tronAddress='TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH';
@@ -30,10 +30,14 @@ const server = http.createServer(async (req,res)=>{
   res.setHeader('Content-Type','application/json');
   let body='';for await(const chunk of req)body+=chunk;body=body?JSON.parse(body):{};
   const respond = data => res.end(JSON.stringify(data));
+  if(req.method==='POST'&&(pathname.startsWith('/solana/api/')||pathname.startsWith('/tron/api/'))){
+   const csrf=pathname.startsWith('/solana/')?solCSRF:tronCSRF;
+   if(req.headers['x-wallet-csrf']!==csrf){res.statusCode=403;return respond({error:'fixture stale CSRF token'});}
+  }
 
   if(pathname==='/showcase'){res.setHeader('Content-Type','text/html');return res.end(await fs.readFile(path.join(root,'internal/web/templates/showcase.html')));}
   if(pathname==='/tron/'){res.setHeader('Content-Type','text/html');return res.end((await fs.readFile(path.join(root,'internal/web/templates/tron.html'),'utf8')).replace(/{{if \.Shared}}([\s\S]*?){{end}}/g,(_,yes)=>url.searchParams.has('shared')?yes:''));}
-  if(pathname==='/tron/api/status')return respond({exists:tronExists,address:tronAddress,csrfToken:'fixture'});
+  if(pathname==='/tron/api/status')return respond({exists:tronExists,address:tronAddress,csrfToken:tronCSRF});
   if(pathname==='/tron/api/create'){tronExists=true;return respond({address:tronAddress});}
   if(pathname==='/tron/api/balance')return respond({trx:'100',active:true,bandwidth:600,energy:0});
   if(pathname==='/tron/api/history')return respond(tronHistory);
@@ -41,7 +45,7 @@ const server = http.createServer(async (req,res)=>{
   if(pathname==='/tron/api/quote')return respond({...body,id:'tron-quote',symbol:body.contract?'TEST':'TRX',feeTrx:'0.3',feeLimitTrx:'0',energy:0,bandwidth:300,expiresAt:new Date(Date.now()+60000).toISOString()});
   if(pathname==='/tron/api/send'){tronSends += 1;tronHistory=[{signature:'1'.repeat(64),to:tronAddress,amount:'0.000001',symbol:'TRX',feeTrx:'0.001',state:'finalized',finalized:true}];return respond(tronHistory[0]);}
   if(pathname==='/solana/'){res.setHeader('Content-Type','text/html');return res.end((await fs.readFile(path.join(root,'internal/web/templates/solana.html'),'utf8')).replace(/{{if \.Shared}}([\s\S]*?){{end}}/g,(_,yes)=>url.searchParams.has('shared')?yes:''));}
-  if(pathname==='/solana/api/status')return respond({exists:solExists,address:solAddress,csrfToken:'fixture'});
+  if(pathname==='/solana/api/status')return respond({exists:solExists,address:solAddress,csrfToken:solCSRF});
   if(pathname==='/solana/api/create'){solExists=true;return respond({address:solAddress});}
   if(pathname==='/solana/api/balance'){if(balanceFailure){res.statusCode=502;return respond({error:'fixture Devnet unavailable'});}return respond({sol:'0.1',slot:100});}
   if(pathname==='/solana/api/history')return respond(solHistory);
@@ -178,9 +182,11 @@ const server = http.createServer(async (req,res)=>{
   vaultQuoteFailure=true;await page.locator('#vault-deposit').click();
   await page.waitForFunction(()=>document.querySelector('#vault-error').textContent.includes('simulation reverted'));
   assert.equal(await page.locator('#send-confirmation').isVisible(),false);vaultQuoteFailure=false;
-  vaultEnabled=false;await page.locator('#vault-refresh').click();
+  vaultEnabled=false;balanceFailure=true;await page.locator('#vault-refresh').click();
   await page.waitForFunction(()=>document.querySelector('#vault-status').textContent.includes('尚未啟用'));
   assert.equal(await page.locator('#vault-deposit').isDisabled(),true);
+  assert.equal(await page.locator('#vault-error').isVisible(),false,'disabled vault does not depend on wallet balance RPC');
+  balanceFailure=false;
   vaultEnabled=true;vaultFailure=true;await page.locator('#vault-refresh').click();
   await page.waitForFunction(()=>document.querySelector('#vault-error').textContent.includes('vault unavailable'));
   assert.equal(await page.locator('#vault-withdraw').isDisabled(),true);vaultFailure=false;
@@ -192,7 +198,7 @@ const server = http.createServer(async (req,res)=>{
   await page.locator('#vault-amount').fill('0.001');await page.locator('#vault-deposit').click();
   await page.locator('#send-confirmation').waitFor({state:'visible'});await page.locator('#cancel-send').click();
   await page.locator('#account-select').selectOption('b'.repeat(32));
-  await page.waitForURL('**/accounts/'+ 'b'.repeat(32) +'/');await view('vault-panel');
+  await page.waitForURL('**/accounts/'+ 'b'.repeat(32) +'/**');await view('vault-panel');
   await page.waitForFunction(()=>document.querySelector('#vault-deposited-balance').textContent.includes('0 ETH'));
   assert.equal(await page.locator('#vault-amount').inputValue(),'','account switch clears amount');
   assert.equal(await page.locator('#send-confirmation').isVisible(),false,'account switch cannot reuse quote');
@@ -355,7 +361,13 @@ const server = http.createServer(async (req,res)=>{
   await view('test-funding-panel');await page.locator('#sol-airdrop').click(); await page.waitForFunction(()=>document.querySelector('#sol-funding-status').textContent.includes('限流'));
   assert.equal(await page.locator('#sol-airdrop').isEnabled(),true);
   assert.equal(await page.locator('#sol-password').inputValue(),'');
-  await view('send-panel');await page.locator('#sol-self').click();await page.locator('#sol-transfer button[type=submit]').click();await page.locator('#sol-confirm').waitFor({state:'visible'});
+  solCSRF='sol-after-restart';
+  await view('send-panel');await page.locator('#sol-self').click();await page.locator('#sol-transfer button[type=submit]').click();
+  await page.waitForFunction(()=>document.querySelector('#sol-error').textContent.includes('stale CSRF'));
+  assert.equal(await page.locator('#sol-confirm').isVisible(),false);
+  await view('overview');await page.locator('#sol-refresh').click();await page.waitForFunction(()=>!document.querySelector('#sol-refresh').disabled);
+  assert.equal(solSends,0,'refresh never signs or sends a Solana transaction');
+  await view('send-panel');await page.locator('#sol-transfer button[type=submit]').click();await page.locator('#sol-confirm').waitFor({state:'visible'});
   assert.ok((await page.locator('#sol-quote').textContent()).includes('Solana Devnet'));assert.equal(solSends,0);
   await page.locator('#sol-sign-password').fill('fixture-password-only');await page.locator('#sol-sign button[type=submit]').click();await page.locator('#sol-confirm').waitFor({state:'hidden'});
   await page.waitForFunction(()=>document.querySelector('#sol-history').textContent.includes('終局確認'));assert.equal(solSends,1);assert.equal(await page.locator('#sol-sign-password').inputValue(),'');
@@ -365,9 +377,16 @@ const server = http.createServer(async (req,res)=>{
   await page.locator('#tron-mnemonic').fill('fixture mnemonic');await page.locator('#tron-password').fill('fixture-password-only');await page.locator('#tron-password-confirm').fill('fixture-password-only');await page.locator('#tron-create button').click();
   await page.locator('#tron-dashboard').waitFor({state:'visible'});await view('test-funding-panel');await page.locator('#tron-claim').click();await page.waitForFunction(()=>document.querySelector('#tron-funding-status').textContent.includes('庫存不足'));assert.equal(await page.locator('#tron-claim').isEnabled(),true);await page.waitForFunction(()=>document.querySelector('#tron-balance').textContent==='100 TRX');
   await view('send-panel');await page.locator('#tron-contract').fill(tronAddress);await page.locator('#tron-token-query').click();await page.waitForFunction(()=>document.querySelector('#tron-token-info').textContent.includes('TEST'));
-  await page.locator('#tron-self').click();assert.equal(await page.locator('#tron-amount-label').textContent(),'數量');assert.equal(await page.locator('#tron-to').inputValue(),'');await page.locator('#tron-to').fill(tronAddress);await page.locator('#tron-transfer button[type=submit]').click();await page.locator('#tron-confirm').waitFor({state:'visible'});assert.equal(tronSends,0);assert.ok((await page.locator('#tron-quote').textContent()).includes('TRON Shasta'));
+  await page.locator('#tron-self').click();assert.equal(await page.locator('#tron-amount-label').textContent(),'數量');assert.equal(await page.locator('#tron-to').inputValue(),'');await page.locator('#tron-to').fill(tronAddress);
+  tronCSRF='tron-after-restart';await page.locator('#tron-transfer button[type=submit]').click();
+  await page.waitForFunction(()=>document.querySelector('#tron-error').textContent.includes('stale CSRF'));
+  assert.equal(await page.locator('#tron-confirm').isVisible(),false);
+  await view('overview');await page.locator('#tron-refresh').click();await page.waitForFunction(()=>!document.querySelector('#tron-refresh').disabled);
+  assert.equal(tronSends,0,'refresh never signs or sends a TRON transaction');
+  await view('send-panel');await page.locator('#tron-transfer button[type=submit]').click();await page.locator('#tron-confirm').waitFor({state:'visible'});assert.equal(tronSends,0);assert.ok((await page.locator('#tron-quote').textContent()).includes('TRON Shasta'));
   await page.locator('#tron-sign-password').fill('fixture-password-only');await page.locator('#tron-sign button[type=submit]').click();await page.locator('#tron-confirm').waitFor({state:'hidden'});await page.waitForFunction(()=>document.querySelector('#tron-history').textContent.includes('終局確認'));assert.equal(tronSends,1);assert.equal(await page.locator('#tron-sign-password').inputValue(),'');
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'TRON mobile overflow');
+  console.log('PASS: Solana/TRON refresh renews rotated CSRF before quoting without automatically signing or sending (mock APIs).');
   exists=true; await page.setViewportSize({width:1280,height:900});await page.goto(base);await page.locator('#wallet-dashboard').waitFor({state:'visible'});
   await view('send-panel');await page.locator('#send-to').fill(address);await page.locator('#send-amount').fill('0.012345');
   await page.locator('#language-select').selectOption('en');

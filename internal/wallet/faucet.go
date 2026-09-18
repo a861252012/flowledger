@@ -3,11 +3,13 @@ package wallet
 import (
 	"context"
 	"errors"
-	sol "github.com/gagliardetto/solana-go"
 	"math/big"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/a861252012/testnet-wallet-lab/internal/chain"
+	sol "github.com/gagliardetto/solana-go"
 )
 
 // TestFaucet uses the existing account services so signing, nonce locks and journals remain shared.
@@ -85,11 +87,11 @@ func (f *TestFaucet) Claim(ctx context.Context, chainID int64, asset, address st
 	defer f.mu.Unlock()
 	amount := ""
 	switch chainID {
-	case 11155111:
+	case chain.SepoliaID:
 		amount = "0.001"
-	case 84532, 11155420, 421614:
+	case chain.BaseSepoliaID, chain.OptimismSepoliaID, chain.ArbitrumSepoliaID:
 		amount = "0.0001"
-	case 80002:
+	case chain.PolygonAmoyID:
 		amount = "0.1"
 	default:
 		return nil, ErrWrongChain
@@ -102,7 +104,7 @@ func (f *TestFaucet) Claim(ctx context.Context, chainID int64, asset, address st
 		return nil, ErrWrongChain
 	}
 	req := &QuoteRequest{Action: "eth", To: address, Amount: amount}
-	if asset == "usdc" && chainID == 11155111 {
+	if asset == "usdc" && chainID == chain.SepoliaID {
 		req.Action, req.Contract, req.Amount = "transfer", USDCAddress, "0.01"
 	} else if asset != "native" {
 		return nil, errors.New("此網路尚未提供這種測試幣")
@@ -164,7 +166,7 @@ func (f *TestFaucet) Claim(ctx context.Context, chainID int64, asset, address st
 		fee.Add(fee, rollup)
 	}
 	limit := "0.0001"
-	if chainID == 80002 {
+	if chainID == chain.PolygonAmoyID {
 		limit = "0.1"
 	} else if asset == "usdc" || req.Action == "transfer" {
 		limit = "0.0005"

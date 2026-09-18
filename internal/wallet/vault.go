@@ -10,6 +10,8 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/rpc"
 )
 
 const ethVaultABIJSON = `[
@@ -107,6 +109,48 @@ func QueryVaultBalanceOf(ctx context.Context, caller ChainCaller, contract, acco
 	return balance, nil
 }
 
+func decodeVaultError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, chain.ErrTimeout) || errors.Is(err, chain.ErrUnavailable) || errors.Is(err, chain.ErrNetwork) {
+		return err
+	}
+	var rawData string
+	var dataErr rpc.DataError
+	if errors.As(err, &dataErr) {
+		switch v := dataErr.ErrorData().(type) {
+		case string:
+			rawData = v
+		case []byte:
+			rawData = hexutil.Encode(v)
+		case map[string]any:
+			rawData, _ = v["data"].(string)
+		}
+	}
+	if rawData == "" {
+		rawData = strings.TrimPrefix(err.Error(), "execution reverted: ")
+	}
+	data, decodeErr := hexutil.Decode(rawData)
+	if decodeErr != nil || len(data) < 4 {
+		return errors.New("存款箱合約模擬執行失敗，未送出交易")
+	}
+	switch hexutil.Encode(data[:4]) {
+	case "0x56316e87":
+		return errors.New("存款金額必須大於 0")
+	case "0xb8cb6219":
+		return errors.New("提款金額必須大於 0")
+	case "0xcf479181":
+		return errors.New("存款箱餘額不足以提款")
+	case "0x37ed32e8":
+		return errors.New("拒絕重入呼叫")
+	case "0x90b8ec18":
+		return errors.New("合約轉帳失敗")
+	default:
+		return errors.New("存款箱合約模擬執行失敗，未送出交易")
+	}
+}
+
 // SimulateVaultCall checks a call against the current state; inclusion can still fail.
 func SimulateVaultCall(ctx context.Context, caller ChainCaller, from, to common.Address, value *big.Int, data []byte) error {
 	msg := ethereum.CallMsg{
@@ -117,7 +161,7 @@ func SimulateVaultCall(ctx context.Context, caller ChainCaller, from, to common.
 	}
 	_, err := caller.CallContract(ctx, msg, nil)
 	if err != nil {
-		return errors.New("存款箱合約模擬執行失敗，未送出交易")
+		return decodeVaultError(err)
 	}
 	return nil
 }

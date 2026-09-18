@@ -19,7 +19,7 @@ import (
 func NewFallback(endpoints []string) (*Client, error) { return NewNetwork(SepoliaID, endpoints) }
 
 func NewNetwork(chainID int64, endpoints []string) (*Client, error) {
-	if chainID != SepoliaID && chainID != 421614 && chainID != 84532 && chainID != 11155420 && chainID != 80002 {
+	if chainID != SepoliaID && chainID != ArbitrumSepoliaID && chainID != BaseSepoliaID && chainID != OptimismSepoliaID && chainID != PolygonAmoyID {
 		return nil, ErrNetwork
 	}
 	if len(endpoints) == 0 || len(endpoints) > 4 {
@@ -47,9 +47,68 @@ type fallbackTransport struct {
 	failovers atomic.Uint64
 	lastMS    atomic.Int64
 	active    atomic.Uint32
+	healthy   atomic.Bool
 	chainID   int64
 	targets   []*url.URL
 	base      http.RoundTripper
+}
+
+func (t *fallbackTransport) probeEndpoint(req *http.Request, endpoint *url.URL) bool {
+	ctx, cancel := context.WithTimeout(req.Context(), 4*time.Second)
+	defer cancel()
+	probe := req.Clone(ctx)
+	probe.URL = endpoint
+	probe.Host = endpoint.Host
+	probe.Header.Del("Authorization")
+	probe.Header.Set("X-Flowledger-Probe", "1")
+	if endpoint.User != nil {
+		password, _ := endpoint.User.Password()
+		probe.SetBasicAuth(endpoint.User.Username(), password)
+	}
+	probe.Body = io.NopCloser(bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}`))
+	probe.ContentLength = -1
+	response, err := t.base.RoundTrip(probe)
+	if err != nil {
+		return false
+	}
+	defer response.Body.Close()
+	var result struct {
+		Result string `json:"result"`
+	}
+	data, readErr := io.ReadAll(io.LimitReader(response.Body, 4096))
+	if readErr != nil || response.StatusCode != http.StatusOK || json.Unmarshal(data, &result) != nil {
+		return false
+	}
+	id, ok := new(big.Int).SetString(result.Result, 0)
+	if !ok || id.Cmp(big.NewInt(t.chainID)) != 0 {
+		return false
+	}
+	return true
+}
+
+func (t *fallbackTransport) sendAttempt(req *http.Request, endpoint *url.URL, payload []byte) (*http.Response, context.CancelFunc, error) {
+	ctx, cancel := context.WithTimeout(req.Context(), 8*time.Second)
+	attempt := req.Clone(ctx)
+	attempt.URL = endpoint
+	attempt.Host = endpoint.Host
+	attempt.Header.Del("Authorization")
+	if endpoint.User != nil {
+		password, _ := endpoint.User.Password()
+		attempt.SetBasicAuth(endpoint.User.Username(), password)
+	}
+	attempt.Body = io.NopCloser(bytes.NewReader(payload))
+	attempt.ContentLength = int64(len(payload))
+	response, err := t.base.RoundTrip(attempt)
+	if err != nil {
+		cancel()
+		return nil, nil, err
+	}
+	if response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= 500 {
+		response.Body.Close()
+		cancel()
+		return nil, nil, ErrUnavailable
+	}
+	return response, cancel, nil
 }
 
 func (t *fallbackTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -67,71 +126,52 @@ func (t *fallbackTransport) RoundTrip(req *http.Request) (*http.Response, error)
 	if err != nil || len(payload) > 1024*1024 {
 		return nil, ErrUnavailable
 	}
+
+	var startOffset int
+	if t.healthy.Load() {
+		activeIdx := int(t.active.Load()) % len(t.targets)
+		endpoint := t.targets[activeIdx]
+		if req.Context().Err() != nil {
+			return nil, req.Context().Err()
+		}
+		resp, cancel, sendErr := t.sendAttempt(req, endpoint, payload)
+		if sendErr == nil {
+			success = true
+			resp.Body = &cancelBody{ReadCloser: resp.Body, cancel: cancel}
+			return resp, nil
+		}
+		if req.Context().Err() != nil {
+			return nil, req.Context().Err()
+		}
+		t.healthy.Store(false)
+		startOffset = 1
+	}
+
 	start := int(t.active.Load())
-	for offset := range t.targets {
-		index := (start + offset) % len(t.targets)
+	for offset := 0; offset < len(t.targets); offset++ {
+		index := (start + startOffset + offset) % len(t.targets)
 		endpoint := t.targets[index]
 		if req.Context().Err() != nil {
 			return nil, req.Context().Err()
 		}
-		ctx, cancel := context.WithTimeout(req.Context(), 4*time.Second)
-		probe := req.Clone(ctx)
-		probe.URL = endpoint
-		probe.Host = endpoint.Host
-		probe.Header.Del("Authorization")
-		if endpoint.User != nil {
-			password, _ := endpoint.User.Password()
-			probe.SetBasicAuth(endpoint.User.Username(), password)
-		}
-		probe.Body = io.NopCloser(bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}`))
-		probe.ContentLength = -1
-		response, err := t.base.RoundTrip(probe)
-		var result struct {
-			Result string `json:"result"`
-		}
-		valid := false
-		if err == nil {
-			data, readErr := io.ReadAll(io.LimitReader(response.Body, 4096))
-			response.Body.Close()
-			valid = readErr == nil && response.StatusCode == 200 && json.Unmarshal(data, &result) == nil
-		}
-		cancel()
-		id, ok := new(big.Int).SetString(result.Result, 0)
-		if !valid || !ok {
+		if !t.probeEndpoint(req, endpoint) {
 			continue
 		}
-		if id.Cmp(big.NewInt(t.chainID)) != 0 {
-			continue
-		}
-		ctx, cancel = context.WithTimeout(req.Context(), 8*time.Second)
-		attempt := req.Clone(ctx)
-		attempt.URL = endpoint
-		attempt.Host = endpoint.Host
-		attempt.Header.Del("Authorization")
-		if endpoint.User != nil {
-			password, _ := endpoint.User.Password()
-			attempt.SetBasicAuth(endpoint.User.Username(), password)
-		}
-		attempt.Body = io.NopCloser(bytes.NewReader(payload))
-		attempt.ContentLength = int64(len(payload))
-		response, err = t.base.RoundTrip(attempt)
-		if err != nil {
-			cancel()
-			continue
-		}
-		if response.StatusCode == 429 || response.StatusCode >= 500 {
-			response.Body.Close()
-			cancel()
+		resp, cancel, sendErr := t.sendAttempt(req, endpoint, payload)
+		if sendErr != nil {
 			continue
 		}
 		success = true
-		if offset > 0 {
-			t.failovers.Add(1)
+		if index != start {
+			if t.active.CompareAndSwap(uint32(start), uint32(index)) {
+				t.failovers.Add(1)
+			}
+		} else {
+			t.active.Store(uint32(index))
 		}
-		t.active.Store(uint32(index))
-		// Keep the deadline alive until the RPC decoder closes its response.
-		response.Body = &cancelBody{ReadCloser: response.Body, cancel: cancel}
-		return response, nil
+		t.healthy.Store(true)
+		resp.Body = &cancelBody{ReadCloser: resp.Body, cancel: cancel}
+		return resp, nil
 	}
 	return nil, ErrUnavailable
 }

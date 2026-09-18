@@ -18,25 +18,6 @@ const (
 	OuterPackLength = 96
 )
 
-// fillUint256Word 將 big.Int 大端序寫入 32 位元組目標切片中，並進行非負與 256 位元邊界檢查
-func fillUint256Word(dest []byte, val *big.Int) error {
-	if val == nil {
-		return ErrNilField
-	}
-	if val.Sign() < 0 {
-		return ErrNegativeValue
-	}
-	if val.BitLen() > 256 {
-		return ErrUint256Overflow
-	}
-	for i := 0; i < 32; i += 1 {
-		dest[i] = 0
-	}
-	bytes := val.Bytes()
-	copy(dest[32-len(bytes):32], bytes)
-	return nil
-}
-
 // PackUserOp 對 UserOperation 進行標準 v0.6 內部 ABI 打包 (320 位元組)
 // 符合 PROJECT.md 介面契約規範
 func PackUserOp(userOp *UserOperation) ([]byte, error) {
@@ -53,9 +34,7 @@ func PackUserOp(userOp *UserOperation) ([]byte, error) {
 	copy(buf[12:32], userOp.Sender.Bytes())
 
 	// Word 1 [32:64]: nonce
-	if err := fillUint256Word(buf[32:64], userOp.Nonce); err != nil {
-		return nil, err
-	}
+	userOp.Nonce.FillBytes(buf[32:64])
 
 	// Word 2 [64:96]: keccak256(initCode)
 	hashInitCode := crypto.Keccak256(userOp.InitCode)
@@ -66,29 +45,19 @@ func PackUserOp(userOp *UserOperation) ([]byte, error) {
 	copy(buf[96:128], hashCallData)
 
 	// Word 4 [128:160]: callGasLimit
-	if err := fillUint256Word(buf[128:160], userOp.CallGasLimit); err != nil {
-		return nil, err
-	}
+	userOp.CallGasLimit.FillBytes(buf[128:160])
 
 	// Word 5 [160:192]: verificationGasLimit
-	if err := fillUint256Word(buf[160:192], userOp.VerificationGasLimit); err != nil {
-		return nil, err
-	}
+	userOp.VerificationGasLimit.FillBytes(buf[160:192])
 
 	// Word 6 [192:224]: preVerificationGas
-	if err := fillUint256Word(buf[192:224], userOp.PreVerificationGas); err != nil {
-		return nil, err
-	}
+	userOp.PreVerificationGas.FillBytes(buf[192:224])
 
 	// Word 7 [224:256]: maxFeePerGas
-	if err := fillUint256Word(buf[224:256], userOp.MaxFeePerGas); err != nil {
-		return nil, err
-	}
+	userOp.MaxFeePerGas.FillBytes(buf[224:256])
 
 	// Word 8 [256:288]: maxPriorityFeePerGas
-	if err := fillUint256Word(buf[256:288], userOp.MaxPriorityFeePerGas); err != nil {
-		return nil, err
-	}
+	userOp.MaxPriorityFeePerGas.FillBytes(buf[256:288])
 
 	// Word 9 [288:320]: keccak256(paymasterAndData)
 	hashPaymasterAndData := crypto.Keccak256(userOp.PaymasterAndData)
@@ -109,9 +78,7 @@ func PackPackedUserOp(userOp *PackedUserOperation) ([]byte, error) {
 	copy(buf[12:32], userOp.Sender.Bytes())
 
 	// Word 1 [32:64]: nonce
-	if err := fillUint256Word(buf[32:64], userOp.Nonce); err != nil {
-		return nil, err
-	}
+	userOp.Nonce.FillBytes(buf[32:64])
 
 	// Word 2 [64:96]: keccak256(initCode)
 	hashInitCode := crypto.Keccak256(userOp.InitCode)
@@ -125,9 +92,7 @@ func PackPackedUserOp(userOp *PackedUserOperation) ([]byte, error) {
 	copy(buf[128:160], userOp.AccountGasLimits[:])
 
 	// Word 5 [160:192]: preVerificationGas
-	if err := fillUint256Word(buf[160:192], userOp.PreVerificationGas); err != nil {
-		return nil, err
-	}
+	userOp.PreVerificationGas.FillBytes(buf[160:192])
 
 	// Word 6 [192:224]: gasFees
 	copy(buf[192:224], userOp.GasFees[:])
@@ -178,9 +143,7 @@ func PackUserOpHashData(innerHash common.Hash, entryPoint common.Address, chainI
 	copy(buf[44:64], entryPoint.Bytes())
 
 	// Word 2 [64:96]: chainID (大端序 32 位元組)
-	if err := fillUint256Word(buf[64:96], chainID); err != nil {
-		return nil, err
-	}
+	chainID.FillBytes(buf[64:96])
 
 	return buf, nil
 }
@@ -238,9 +201,4 @@ func GetUserOpHashV07(userOp *PackedUserOperation, entryPoint common.Address, ch
 	}
 
 	return crypto.Keccak256Hash(outerBytes), nil
-}
-
-// GetPackedUserOpHash 為 GetUserOpHashV07 之別名，提供符合 v0.7 命名風格之介面
-func GetPackedUserOpHash(userOp *PackedUserOperation, entryPoint common.Address, chainID *big.Int) (common.Hash, error) {
-	return GetUserOpHashV07(userOp, entryPoint, chainID)
 }

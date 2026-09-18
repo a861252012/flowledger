@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum"
@@ -15,7 +16,31 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
-const SepoliaID = 11155111
+const (
+	SepoliaID         = 11155111
+	ArbitrumSepoliaID = 421614
+	BaseSepoliaID     = 84532
+	OptimismSepoliaID = 11155420
+	PolygonAmoyID     = 80002
+)
+
+// NetworkSlug returns the URL/file slug for the given chain ID.
+func NetworkSlug(chainID int64) string {
+	switch chainID {
+	case SepoliaID:
+		return "sepolia"
+	case ArbitrumSepoliaID:
+		return "arbitrum"
+	case BaseSepoliaID:
+		return "base"
+	case OptimismSepoliaID:
+		return "optimism"
+	case PolygonAmoyID:
+		return "polygon"
+	default:
+		return "sepolia"
+	}
+}
 
 var (
 	ErrAddress     = errors.New("地址格式不正確，請輸入 0x 開頭的 40 位十六進位地址")
@@ -28,9 +53,11 @@ var (
 )
 
 type Client struct {
-	transport *fallbackTransport
-	rpc       *ethclient.Client
-	chainID   int64
+	transport         *fallbackTransport
+	rpc               *ethclient.Client
+	chainID           int64
+	networkVerified   atomic.Bool
+	verifiedFailovers atomic.Uint64
 }
 
 func (c *Client) ChainID() int64 {
@@ -41,7 +68,7 @@ func (c *Client) ChainID() int64 {
 }
 
 func (c *Client) NativeSymbol() string {
-	if c.ChainID() == 80002 {
+	if c.ChainID() == PolygonAmoyID {
 		return "POL"
 	}
 	return "ETH"
@@ -61,15 +88,33 @@ func New(endpoint string) (*Client, error) {
 
 func (c *Client) Close() { c.rpc.Close() }
 
-func (c *Client) checkNetwork(ctx context.Context) error {
+func (c *Client) verifyNetwork(ctx context.Context) error {
+	var currentFailovers uint64
+	if c.transport != nil {
+		currentFailovers = c.transport.failovers.Load()
+	}
 	id, err := c.rpc.ChainID(ctx)
 	if err != nil {
 		return rpcError(err)
 	}
 	if !id.IsInt64() || id.Int64() != c.ChainID() {
+		c.networkVerified.Store(false)
 		return ErrNetwork
 	}
+	c.verifiedFailovers.Store(currentFailovers)
+	c.networkVerified.Store(true)
 	return nil
+}
+
+func (c *Client) checkNetwork(ctx context.Context) error {
+	var currentFailovers uint64
+	if c.transport != nil {
+		currentFailovers = c.transport.failovers.Load()
+	}
+	if c.networkVerified.Load() && c.verifiedFailovers.Load() == currentFailovers {
+		return nil
+	}
+	return c.verifyNetwork(ctx)
 }
 
 func (c *Client) Network(ctx context.Context) (*Network, error) {

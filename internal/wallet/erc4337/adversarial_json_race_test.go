@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -580,14 +581,14 @@ func TestUserOp_Adversarial_DeepCopy_IsolationStress(t *testing.T) {
 		Sender:               common.HexToAddress("0x1111111111111111111111111111111111111111"),
 		Nonce:                new(big.Int).Set(originalNonce),
 		InitCode:             []byte{0xaa, 0xbb},
-		CallData:             copyBytes(originalCallData),
+		CallData:             slices.Clone(originalCallData),
 		CallGasLimit:         big.NewInt(100000),
 		VerificationGasLimit: big.NewInt(150000),
 		PreVerificationGas:   big.NewInt(21000),
 		MaxFeePerGas:         big.NewInt(1000000000),
 		MaxPriorityFeePerGas: big.NewInt(1000000000),
 		PaymasterAndData:     []byte{0xcc, 0xdd},
-		Signature:            copyBytes(originalSig),
+		Signature:            slices.Clone(originalSig),
 	}
 
 	const goroutines = 128

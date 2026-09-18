@@ -320,11 +320,6 @@ type QuoteResponse struct {
 	Exchange             *ExchangePreview `json:"exchange,omitempty"`
 }
 
-type SendRequest struct {
-	QuoteID  string `json:"quoteId"`
-	Password string `json:"password"`
-}
-
 type SendResponse struct {
 	Reused    bool   `json:"reused,omitempty"`
 	Hash      string `json:"hash"`
@@ -334,10 +329,6 @@ type SendResponse struct {
 	Symbol    string `json:"symbol"`
 	Action    string `json:"action"`
 	CreatedAt string `json:"createdAt"`
-}
-
-type RetryRequest struct {
-	Hash string `json:"hash"`
 }
 
 type HistoryItem struct {

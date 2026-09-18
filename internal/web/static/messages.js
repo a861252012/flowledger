@@ -67,7 +67,6 @@ window.FlowMessages = {
   "還原": ["Restore","恢复"],
   "更改錢包名稱": ["Rename wallet","重命名钱包"],
   "封存錢包": ["Archive wallet","归档钱包"],
-  "還原錢包": ["Restore wallet","恢复钱包"],
   "先命名，下一步建立新錢包或匯入現有錢包。每個錢包分開保存金鑰與紀錄。": ["Choose a name, then create or import a wallet. Each wallet stores its keys and records separately.","先命名，下一步创建或导入钱包。每个钱包分别保存密钥和记录。"],
   "封存後會從切換清單隱藏，金鑰與紀錄仍會保留。這不會刪除或轉移鏈上資產。": ["This hides the wallet from the switcher and keeps keys and records. It does not delete or transfer on-chain assets.","归档后从切换列表隐藏，保留密钥和记录。不会删除或转移链上资产。"],
   "還原後會重新出現在錢包切換清單。": ["The wallet will reappear in the wallet switcher.","恢复后重新出现在钱包切换列表。"],

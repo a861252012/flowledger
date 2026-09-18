@@ -284,176 +284,105 @@ func TestAdversarial_RecoveryIDStrictValidation(t *testing.T) {
 	}
 }
 
-// 測試場景 3：KeystoreSigner 與 EphemeralSigner 的私鑰抹除對抗測試
+// 測試場景 3：KeystoreSigner 的私鑰抹除對抗測試
 // 驗證簽署後原私鑰變數 D 是否確實為 0 且無法再簽名
-func TestAdversarial_KeyWiping_EphemeralAndKeystoreSigner(t *testing.T) {
+func TestAdversarial_KeyWiping_KeystoreSigner(t *testing.T) {
 	t.Parallel()
 
 	testHash := crypto.Keccak256Hash([]byte("memory wipe adversarial stress"))
 
-	// 3.1 EphemeralSigner 私鑰抹除測試
-	t.Run("EphemeralSigner_WipeAndCannotSignAgain", func(t *testing.T) {
-		privKey, err := crypto.GenerateKey()
-		if err != nil {
-			t.Fatalf("生成私鑰失敗: %v", err)
-		}
-		addr := crypto.PubkeyToAddress(privKey.PublicKey)
+	privKey, err := crypto.GenerateKey()
+	if err != nil {
+		t.Fatalf("生成私鑰失敗: %v", err)
+	}
+	addr := crypto.PubkeyToAddress(privKey.PublicKey)
 
-		rawKey, _ := crypto.ToECDSA(crypto.FromECDSA(privKey))
+	spyDecrypter := newSpyKeystoreDecrypter(privKey, "secret-pass-4337")
+	ksSigner, err := NewKeystoreSigner(spyDecrypter, "secret-pass-4337")
+	if err != nil {
+		t.Fatalf("NewKeystoreSigner 失敗: %v", err)
+	}
 
-		signer := NewEphemeralSigner(addr, func() (*ecdsa.PrivateKey, error) {
-			return rawKey, nil
-		})
+	// 1. SignHash
+	sig1, err := ksSigner.SignHash(testHash)
+	if err != nil {
+		t.Fatalf("SignHash 失敗: %v", err)
+	}
+	if v, _ := VerifySignature(testHash, sig1, addr); !v {
+		t.Fatalf("SignHash 簽章驗證失敗")
+	}
 
-		sig, err := signer.SignHash(testHash)
-		if err != nil {
-			t.Fatalf("SignHash 失敗: %v", err)
-		}
+	// 2. SignUserOp
+	op := &UserOperation{
+		Sender:               addr,
+		Nonce:                big.NewInt(1),
+		CallGasLimit:         big.NewInt(50000),
+		VerificationGasLimit: big.NewInt(100000),
+		PreVerificationGas:   big.NewInt(21000),
+		MaxFeePerGas:         big.NewInt(2000000000),
+		MaxPriorityFeePerGas: big.NewInt(1000000000),
+	}
+	sig2, err := ksSigner.SignUserOp(op, EntryPointV06, big.NewInt(1))
+	if err != nil {
+		t.Fatalf("SignUserOp 失敗: %v", err)
+	}
+	opHash, _ := GetUserOpHash(op, EntryPointV06, big.NewInt(1))
+	if v, _ := VerifySignature(opHash, sig2, addr); !v {
+		t.Fatalf("SignUserOp 簽章驗證失敗")
+	}
 
-		valid, err := VerifySignature(testHash, sig, addr)
-		if err != nil || !valid {
-			t.Fatalf("簽名驗證失敗")
-		}
+	// 3. SignUserOpWithEthPrefix
+	sig3, err := ksSigner.SignUserOpWithEthPrefix(op, EntryPointV06, big.NewInt(1))
+	if err != nil {
+		t.Fatalf("SignUserOpWithEthPrefix 失敗: %v", err)
+	}
+	if v, _ := VerifySignature(EthSignedMessageHash(opHash), sig3, addr); !v {
+		t.Fatalf("SignUserOpWithEthPrefix 簽章驗證失敗")
+	}
 
-		// 驗證簽署後原私鑰變數 D 是否確實為 0
-		if rawKey.D == nil {
-			t.Fatalf("rawKey.D 指標異常為 nil")
+	interceptedKeys := spyDecrypter.getInterceptedKeys()
+	if len(interceptedKeys) != 3 {
+		t.Fatalf("預期截獲 3 次解密金鑰，實際截獲: %d", len(interceptedKeys))
+	}
+
+	// 檢查每一次解密用過之私鑰，其 D 是否確實被歸零抹除
+	for idx, key := range interceptedKeys {
+		if key.PrivateKey == nil || key.PrivateKey.D == nil {
+			t.Fatalf("金鑰 %d 私鑰指標為空", idx)
 		}
-		if rawKey.D.Sign() != 0 {
-			t.Fatalf("對抗失敗: 簽署完成後 rawKey.D.Sign() 不為 0: %d", rawKey.D.Sign())
+		if key.PrivateKey.D.Sign() != 0 {
+			t.Fatalf("對抗失敗: Keystore 解密金鑰 #%d 之 D.Sign() 不為 0 (實際: %d)", idx, key.PrivateKey.D.Sign())
 		}
-		if rawKey.D.BitLen() != 0 {
-			t.Fatalf("對抗失敗: 簽署完成後 rawKey.D.BitLen() 不為 0: %d", rawKey.D.BitLen())
+		if key.PrivateKey.D.BitLen() != 0 {
+			t.Fatalf("對抗失敗: Keystore 解密金鑰 #%d 之 D.BitLen() 不為 0 (實際: %d)", idx, key.PrivateKey.D.BitLen())
 		}
-		for idx, bitWord := range rawKey.D.Bits() {
-			if bitWord != 0 {
-				t.Fatalf("對抗失敗: rawKey.D.Bits()[%d] 記憶體未歸零: %v", idx, bitWord)
+		for bitIdx, b := range key.PrivateKey.D.Bits() {
+			if b != 0 {
+				t.Fatalf("對抗失敗: Keystore 解密金鑰 #%d 之 Bits[%d] 記憶體未歸零", idx, bitIdx)
 			}
 		}
 
-		// 嘗試使用已被抹除的 rawKey 再次調用 crypto.Sign
+		// 對抗驗證：拿已被抹除的 key.PrivateKey 嘗試簽名，必須無法完成合法簽名
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					// panic 視為無法簽名
+					// panic 亦視為無法簽名
 				}
 			}()
-			badSig, signErr := crypto.Sign(testHash.Bytes(), rawKey)
+			badSig, signErr := crypto.Sign(testHash.Bytes(), key.PrivateKey)
 			if signErr == nil && len(badSig) == 65 {
 				v, _ := VerifySignature(testHash, badSig, addr)
 				if v {
-					t.Fatalf("重大漏洞: 被抹除為 0 之私鑰竟能簽出合法簽章!")
+					t.Fatalf("重大漏洞: 抹除後之 Keystore 私鑰竟能簽出合法簽章!")
 				}
 			}
 		}()
+	}
 
-		// 驗證若 provider 持續回傳已抹除之 rawKey，無法再次完成簽名
-		_, secondErr := signer.SignHash(testHash)
-		if secondErr == nil {
-			t.Fatalf("對抗失敗: EphemeralSigner 持續使用已抹除私鑰時未報錯拒絕")
-		}
-
-		t.Logf("EphemeralSigner 私鑰抹除實測數據:")
-		t.Logf("- 抹除後 D.Sign(): %d (預期 0)", rawKey.D.Sign())
-		t.Logf("- 抹除後 D.BitLen(): %d (預期 0)", rawKey.D.BitLen())
-		t.Logf("- 再次簽署成功阻斷 (無法再簽名)")
-	})
-
-	// 3.2 KeystoreSigner 私鑰抹除測試
-	t.Run("KeystoreSigner_WipeAndCannotSignAgain", func(t *testing.T) {
-		privKey, err := crypto.GenerateKey()
-		if err != nil {
-			t.Fatalf("生成私鑰失敗: %v", err)
-		}
-		addr := crypto.PubkeyToAddress(privKey.PublicKey)
-
-		spyDecrypter := newSpyKeystoreDecrypter(privKey, "secret-pass-4337")
-		ksSigner, err := NewKeystoreSigner(spyDecrypter, "secret-pass-4337")
-		if err != nil {
-			t.Fatalf("NewKeystoreSigner 失敗: %v", err)
-		}
-
-		// 1. SignHash
-		sig1, err := ksSigner.SignHash(testHash)
-		if err != nil {
-			t.Fatalf("SignHash 失敗: %v", err)
-		}
-		if v, _ := VerifySignature(testHash, sig1, addr); !v {
-			t.Fatalf("SignHash 簽章驗證失敗")
-		}
-
-		// 2. SignUserOp
-		op := &UserOperation{
-			Sender:               addr,
-			Nonce:                big.NewInt(1),
-			CallGasLimit:         big.NewInt(50000),
-			VerificationGasLimit: big.NewInt(100000),
-			PreVerificationGas:   big.NewInt(21000),
-			MaxFeePerGas:         big.NewInt(2000000000),
-			MaxPriorityFeePerGas: big.NewInt(1000000000),
-		}
-		sig2, err := ksSigner.SignUserOp(op, EntryPointV06, big.NewInt(1))
-		if err != nil {
-			t.Fatalf("SignUserOp 失敗: %v", err)
-		}
-		opHash, _ := GetUserOpHash(op, EntryPointV06, big.NewInt(1))
-		if v, _ := VerifySignature(opHash, sig2, addr); !v {
-			t.Fatalf("SignUserOp 簽章驗證失敗")
-		}
-
-		// 3. SignUserOpWithEthPrefix
-		sig3, err := ksSigner.SignUserOpWithEthPrefix(op, EntryPointV06, big.NewInt(1))
-		if err != nil {
-			t.Fatalf("SignUserOpWithEthPrefix 失敗: %v", err)
-		}
-		if v, _ := VerifySignature(EthSignedMessageHash(opHash), sig3, addr); !v {
-			t.Fatalf("SignUserOpWithEthPrefix 簽章驗證失敗")
-		}
-
-		interceptedKeys := spyDecrypter.getInterceptedKeys()
-		if len(interceptedKeys) != 3 {
-			t.Fatalf("預期截獲 3 次解密金鑰，實際截獲: %d", len(interceptedKeys))
-		}
-
-		// 檢查每一次解密用過之私鑰，其 D 是否確實被歸零抹除
-		for idx, key := range interceptedKeys {
-			if key.PrivateKey == nil || key.PrivateKey.D == nil {
-				t.Fatalf("金鑰 %d 私鑰指標為空", idx)
-			}
-			if key.PrivateKey.D.Sign() != 0 {
-				t.Fatalf("對抗失敗: Keystore 解密金鑰 #%d 之 D.Sign() 不為 0 (實際: %d)", idx, key.PrivateKey.D.Sign())
-			}
-			if key.PrivateKey.D.BitLen() != 0 {
-				t.Fatalf("對抗失敗: Keystore 解密金鑰 #%d 之 D.BitLen() 不為 0 (實際: %d)", idx, key.PrivateKey.D.BitLen())
-			}
-			for bitIdx, b := range key.PrivateKey.D.Bits() {
-				if b != 0 {
-					t.Fatalf("對抗失敗: Keystore 解密金鑰 #%d 之 Bits[%d] 記憶體未歸零", idx, bitIdx)
-				}
-			}
-
-			// 對抗驗證：拿已被抹除的 key.PrivateKey 嘗試簽名，必須無法完成合法簽名
-			func() {
-				defer func() {
-					if r := recover(); r != nil {
-						// panic 亦視為無法簽名
-					}
-				}()
-				badSig, signErr := crypto.Sign(testHash.Bytes(), key.PrivateKey)
-				if signErr == nil && len(badSig) == 65 {
-					v, _ := VerifySignature(testHash, badSig, addr)
-					if v {
-						t.Fatalf("重大漏洞: 抹除後之 Keystore 私鑰竟能簽出合法簽章!")
-					}
-				}
-			}()
-		}
-
-		t.Logf("KeystoreSigner 私鑰抹除實測數據:")
-		t.Logf("- 攔截解密次數: %d 次 (SignHash, SignUserOp, SignUserOpWithEthPrefix)", len(interceptedKeys))
-		t.Logf("- 私鑰歸零成功率: 100%% (全部 D.Sign()==0, D.BitLen()==0, Bits() 清零)")
-		t.Logf("- 抹除後再簽名阻斷率: 100%% (全數無法簽出有效簽章)")
-	})
+	t.Logf("KeystoreSigner 私鑰抹除實測數據:")
+	t.Logf("- 攔截解密次數: %d 次 (SignHash, SignUserOp, SignUserOpWithEthPrefix)", len(interceptedKeys))
+	t.Logf("- 私鑰歸零成功率: 100%% (全部 D.Sign()==0, D.BitLen()==0, Bits() 清零)")
+	t.Logf("- 抹除後再簽名阻斷率: 100%% (全數無法簽出有效簽章)")
 }
 
 // 測試場景 4：驗證高並行呼叫下 KeystoreSigner 的執行緒安全性

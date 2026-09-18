@@ -15,20 +15,23 @@
 
 ## 本機編譯與測試
 
-Node.js 22、Go 1.26.1。編譯器固定 Solidity 0.8.28，optimizer 開啟、200 runs、EVM Cancun。npm override 將編譯工具的 `tmp` 固定到 0.2.7；不影響 Solidity 程式碼。
+Node.js 22、Go 1.26.1。編譯器固定 Solidity 0.8.37，optimizer 開啟、200 runs、EVM Cancun。npm override 將編譯工具的 `tmp` 固定到 0.2.7；不影響 Solidity 程式碼。
 
 ```sh
 npm ci --ignore-scripts --prefix contracts
 npm run compile --prefix contracts
 npm run check --prefix contracts
-go test ./contracts ./internal/wallet ./internal/web ./internal/chain
+go test ./contracts ./internal/wallet ./internal/web ./internal/chain ./tests/e2e
 npm ci --prefix tests/browser
 npm test --prefix tests/browser
+npm run test:e2e --prefix tests/browser
 ```
 
 `contracts/artifacts/` 保留可重現編譯結果。Go 測試核對來源 SHA-256；CI 重新編譯並比較產物，防止 Solidity 修改後仍測舊 bytecode。Go 的 simulated backend 在記憶體執行合約，不使用使用者 keystore 或公開 RPC。測試用 `ReentrancyAttacker` 與 `RejectingReceiver` 不需要部署到公共鏈。
 
-瀏覽器測試使用本機 HTTP fixtures 並攔截外部請求。畫面截圖與測試成功都不代表 Sepolia 已部署或真實存提成功。
+端對端與瀏覽器測試包含：
+1. `tests/browser/browser.cjs`：UI 契約與介面行為測試（使用本地 HTTP fixtures 模擬各種網路、狀態與邊界）。
+2. `tests/e2e/e2e_test.go` 與 `tests/browser/e2e.cjs`：串接 HTTP 客戶端／Chromium 瀏覽器、本機 Go 測試伺服器（Web + Wallet Service）與記憶體內 simulated EVM 的 `ETHVault` 智慧合約，驗證存款、提款、餘額同步與超額提領拒絕。這些測試不代表公開 Demo 已部署，也不代表 Sepolia 上鏈驗收。
 
 ## 啟用方式（需要另行部署）
 

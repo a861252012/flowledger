@@ -1,0 +1,8 @@
+* text=auto eol=lf
+*.sol text eol=lf
+*.json text eol=lf
+*.go text eol=lf
+*.js text eol=lf
+*.cjs text eol=lf
+*.html text eol=lf
+*.css text eol=lf

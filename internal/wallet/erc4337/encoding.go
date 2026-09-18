@@ -13,7 +13,6 @@ var (
 	typeAddress, _ = abi.NewType("address", "", nil)
 	typeUint256, _ = abi.NewType("uint256", "", nil)
 	typeBytes32, _ = abi.NewType("bytes32", "", nil)
-	typeBytes, _   = abi.NewType("bytes", "", nil)
 )
 
 // userOpV06HashArgs 用於 v0.6 UserOperation 內部打包 (320 位元組)

@@ -24,6 +24,18 @@ services:
       TEST_FAUCET_CONFIG: ${TEST_FAUCET_CONFIG:-}
       SHARED_DEMO: ${SHARED_DEMO:-false}
       SEPOLIA_RPC_URL: ${SEPOLIA_RPC_URL:-https://ethereum-sepolia-rpc.publicnode.com}
+      SEPOLIA_RPC_FALLBACK_URLS: ${SEPOLIA_RPC_FALLBACK_URLS:-}
+      ARBITRUM_SEPOLIA_RPC_URL: ${ARBITRUM_SEPOLIA_RPC_URL:-https://sepolia-rollup.arbitrum.io/rpc}
+      ARBITRUM_SEPOLIA_RPC_FALLBACK_URLS: ${ARBITRUM_SEPOLIA_RPC_FALLBACK_URLS:-}
+      BASE_SEPOLIA_RPC_URL: ${BASE_SEPOLIA_RPC_URL:-https://sepolia.base.org}
+      BASE_SEPOLIA_RPC_FALLBACK_URLS: ${BASE_SEPOLIA_RPC_FALLBACK_URLS:-}
+      OP_SEPOLIA_RPC_URL: ${OP_SEPOLIA_RPC_URL:-https://sepolia.optimism.io}
+      OP_SEPOLIA_RPC_FALLBACK_URLS: ${OP_SEPOLIA_RPC_FALLBACK_URLS:-}
+      POLYGON_AMOY_RPC_URL: ${POLYGON_AMOY_RPC_URL:-https://polygon-amoy.drpc.org}
+      POLYGON_AMOY_RPC_FALLBACK_URLS: ${POLYGON_AMOY_RPC_FALLBACK_URLS:-}
+      SOLANA_DEVNET_RPC_URL: ${SOLANA_DEVNET_RPC_URL:-https://api.devnet.solana.com}
+      TRON_SHASTA_RPC_URL: ${TRON_SHASTA_RPC_URL:-https://api.shasta.trongrid.io}
+      TRON_SHASTA_API_KEY: ${TRON_SHASTA_API_KEY:-}
     ports:
       - "127.0.0.1:8090:8090"
     volumes:

@@ -206,7 +206,7 @@ $('refresh-network').addEventListener('click', refreshNetwork);
 refreshNetwork();
 
 $('network-select').value = networkSuffix;
-$('network-select').addEventListener('change', () => { location.href = (['/solana','/tron'].includes($('network-select').value) ? '' : accountPrefix) + $('network-select').value + '/'; });
+$('network-select').addEventListener('change', () => { location.href = (['/solana','/tron'].includes($('network-select').value) ? '' : accountPrefix) + $('network-select').value + '/' + (location.hash || ''); });
 for (const element of document.querySelectorAll('[data-network-name]')) element.textContent = networkName;
 
 document.querySelector('.brand').href = networkPrefix + '/';

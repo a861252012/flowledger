@@ -2,6 +2,7 @@ package wallet
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"math/big"
@@ -10,9 +11,12 @@ import (
 	"testing"
 
 	"github.com/a861252012/testnet-wallet-lab/internal/chain"
+	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 )
 
 func TestVaultConfigAndInheritance(t *testing.T) {
@@ -439,5 +443,235 @@ func TestVaultAdversarialCases(t *testing.T) {
 	_, err = svc.Send(ctx, qValidWith.ID, "wrong-password-1234")
 	if !errors.Is(err, ErrPasswordMismatch) {
 		t.Fatalf("expected ErrPasswordMismatch, got %v", err)
+	}
+}
+
+type mockCustomCaller struct {
+	err error
+}
+
+func (m *mockCustomCaller) CallContract(ctx context.Context, msg ethereum.CallMsg, blockNumber *big.Int) ([]byte, error) {
+	return nil, m.err
+}
+
+func (m *mockCustomCaller) CodeAt(ctx context.Context, account common.Address, blockNumber *big.Int) ([]byte, error) {
+	return []byte{0x60, 0x80}, nil
+}
+
+type mockCustomDataError struct {
+	msg  string
+	data any
+}
+
+func (m *mockCustomDataError) Error() string  { return m.msg }
+func (m *mockCustomDataError) ErrorData() any { return m.data }
+
+// ethVaultErrorsABIJSON contains the custom error definitions matching ETHVault.sol.
+const ethVaultErrorsABIJSON = `[
+	{"inputs":[{"internalType":"uint256","name":"requested","type":"uint256"},{"internalType":"uint256","name":"available","type":"uint256"}],"name":"InsufficientBalance","type":"error"},
+	{"inputs":[],"name":"ReentrantCall","type":"error"},
+	{"inputs":[],"name":"TransferFailed","type":"error"},
+	{"inputs":[],"name":"ZeroDeposit","type":"error"},
+	{"inputs":[],"name":"ZeroWithdraw","type":"error"}
+]`
+
+// errorSelector computes the 4-byte ABI error selector from a Solidity error signature.
+func errorSelector(sig string) string {
+	return hex.EncodeToString(crypto.Keccak256([]byte(sig))[:4])
+}
+
+func TestSimulateVaultCallCustomErrors(t *testing.T) {
+	vaultABI, err := abi.JSON(strings.NewReader(ethVaultErrorsABIJSON))
+	if err != nil {
+		t.Fatalf("parse ethVaultErrorsABIJSON: %v", err)
+	}
+
+	expectedErrors := []struct {
+		name    string
+		sig     string
+		hexID   string
+		wantErr string
+	}{
+		{
+			name:    "ZeroDeposit",
+			sig:     "ZeroDeposit()",
+			hexID:   "56316e87",
+			wantErr: "存款金額必須大於 0",
+		},
+		{
+			name:    "ZeroWithdraw",
+			sig:     "ZeroWithdraw()",
+			hexID:   "b8cb6219",
+			wantErr: "提款金額必須大於 0",
+		},
+		{
+			name:    "InsufficientBalance",
+			sig:     "InsufficientBalance(uint256,uint256)",
+			hexID:   "cf479181",
+			wantErr: "存款箱餘額不足以提款",
+		},
+		{
+			name:    "ReentrantCall",
+			sig:     "ReentrantCall()",
+			hexID:   "37ed32e8",
+			wantErr: "拒絕重入呼叫",
+		},
+		{
+			name:    "TransferFailed",
+			sig:     "TransferFailed()",
+			hexID:   "90b8ec18",
+			wantErr: "合約轉帳失敗",
+		},
+	}
+
+	for _, exp := range expectedErrors {
+		abiErr, exists := vaultABI.Errors[exp.name]
+		if !exists {
+			t.Fatalf("error %s not found in ABI", exp.name)
+		}
+		abiID := hex.EncodeToString(abiErr.ID[:4])
+		keccakID := errorSelector(exp.sig)
+		if abiID != exp.hexID {
+			t.Fatalf("ABI selector mismatch for %s: got %s, want %s", exp.name, abiID, exp.hexID)
+		}
+		if keccakID != exp.hexID {
+			t.Fatalf("Keccak256 selector mismatch for %s: got %s, want %s", exp.name, keccakID, exp.hexID)
+		}
+	}
+
+	zeroDeposit := errorSelector("ZeroDeposit()")
+	zeroWithdraw := errorSelector("ZeroWithdraw()")
+	insufficientBalance := errorSelector("InsufficientBalance(uint256,uint256)")
+	reentrantCall := errorSelector("ReentrantCall()")
+	transferFailed := errorSelector("TransferFailed()")
+
+	zeroDepositBytes, _ := hex.DecodeString(zeroDeposit)
+
+	// Generate realistic InsufficientBalance revert payload packed with arguments
+	insufficientAbiErr := vaultABI.Errors["InsufficientBalance"]
+	packedArgs, packErr := insufficientAbiErr.Inputs.Pack(
+		new(big.Int).Mul(big.NewInt(10), big.NewInt(1e18)), // requested 10 ETH
+		new(big.Int).Mul(big.NewInt(2), big.NewInt(1e18)),  // available 2 ETH
+	)
+	if packErr != nil {
+		t.Fatalf("pack InsufficientBalance args: %v", packErr)
+	}
+	insufficientFullPayload := append(insufficientAbiErr.ID[:4], packedArgs...)
+	selectorArgs, err := insufficientAbiErr.Inputs.Pack(big.NewInt(0x56316e87), big.NewInt(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	selectorPayload := append(insufficientAbiErr.ID[:4], selectorArgs...)
+
+	tests := []struct {
+		name    string
+		err     error
+		wantErr string
+	}{
+		{
+			name:    "ZeroDeposit selector",
+			err:     errors.New("execution reverted: 0x" + zeroDeposit),
+			wantErr: "存款金額必須大於 0",
+		},
+		{
+			name:    "ZeroDeposit DataError",
+			err:     &mockCustomDataError{msg: "execution reverted", data: "0x" + zeroDeposit},
+			wantErr: "存款金額必須大於 0",
+		},
+		{
+			name:    "ZeroWithdraw selector",
+			err:     errors.New("execution reverted: 0x" + zeroWithdraw),
+			wantErr: "提款金額必須大於 0",
+		},
+		{
+			name:    "ZeroWithdraw DataError",
+			err:     &mockCustomDataError{msg: "execution reverted", data: "0x" + zeroWithdraw},
+			wantErr: "提款金額必須大於 0",
+		},
+		{
+			name:    "InsufficientBalance selector",
+			err:     errors.New("execution reverted: 0x" + insufficientBalance + "0000000000000000000000000000000000000000000000000de0b6b3a7640000"),
+			wantErr: "存款箱餘額不足以提款",
+		},
+		{
+			name:    "InsufficientBalance DataError",
+			err:     &mockCustomDataError{msg: "execution reverted", data: "0x" + insufficientBalance},
+			wantErr: "存款箱餘額不足以提款",
+		},
+		{
+			name:    "InsufficientBalance packed ABI data",
+			err:     &mockCustomDataError{msg: "execution reverted", data: hexutil.Encode(insufficientFullPayload)},
+			wantErr: "存款箱餘額不足以提款",
+		},
+		{
+			name:    "Selector inside argument does not override error",
+			err:     &mockCustomDataError{msg: "execution reverted", data: hexutil.Encode(selectorPayload)},
+			wantErr: "存款箱餘額不足以提款",
+		},
+		{
+			name:    "Error data takes precedence over message",
+			err:     &mockCustomDataError{msg: "execution reverted: 0x" + zeroDeposit, data: "0x" + transferFailed},
+			wantErr: "合約轉帳失敗",
+		},
+		{
+			name:    "Unrelated map field is not revert data",
+			err:     &mockCustomDataError{msg: "execution reverted", data: map[string]any{"requestId": "0x" + zeroDeposit}},
+			wantErr: "存款箱合約模擬執行失敗，未送出交易",
+		},
+		{
+			name:    "Malformed hexadecimal data is not a selector",
+			err:     &mockCustomDataError{msg: "execution reverted", data: "0x" + zeroDeposit + "zz"},
+			wantErr: "存款箱合約模擬執行失敗，未送出交易",
+		},
+		{
+			name:    "ReentrantCall selector",
+			err:     errors.New("execution reverted: 0x" + reentrantCall),
+			wantErr: "拒絕重入呼叫",
+		},
+		{
+			name:    "TransferFailed selector",
+			err:     errors.New("execution reverted: 0x" + transferFailed),
+			wantErr: "合約轉帳失敗",
+		},
+		{
+			name:    "ZeroDeposit DataError map",
+			err:     &mockCustomDataError{msg: "execution reverted", data: map[string]any{"data": "0x" + zeroDeposit}},
+			wantErr: "存款金額必須大於 0",
+		},
+		{
+			name:    "ZeroDeposit DataError byte slice",
+			err:     &mockCustomDataError{msg: "execution reverted", data: zeroDepositBytes},
+			wantErr: "存款金額必須大於 0",
+		},
+		{
+			name:    "Preserve ErrTimeout",
+			err:     chain.ErrTimeout,
+			wantErr: chain.ErrTimeout.Error(),
+		},
+		{
+			name:    "Preserve ErrUnavailable",
+			err:     chain.ErrUnavailable,
+			wantErr: chain.ErrUnavailable.Error(),
+		},
+		{
+			name:    "Preserve ErrNetwork",
+			err:     chain.ErrNetwork,
+			wantErr: chain.ErrNetwork.Error(),
+		},
+		{
+			name:    "Generic error",
+			err:     errors.New("execution reverted: some other error"),
+			wantErr: "存款箱合約模擬執行失敗，未送出交易",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			caller := &mockCustomCaller{err: tc.err}
+			err := SimulateVaultCall(context.Background(), caller, common.Address{}, common.Address{}, big.NewInt(0), nil)
+			if err == nil || err.Error() != tc.wantErr {
+				t.Fatalf("SimulateVaultCall: got %v, want %q", err, tc.wantErr)
+			}
+		})
 	}
 }

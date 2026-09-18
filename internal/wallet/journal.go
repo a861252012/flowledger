@@ -208,17 +208,6 @@ func (jm *JournalManager) forEachRecordLocked(fn func(r *JournalRecord) bool) {
 	}
 }
 
-func (jm *JournalManager) allRecordsLocked() []*JournalRecord {
-	total := len(jm.archived) + len(jm.records)
-	if total == 0 {
-		return nil
-	}
-	all := make([]*JournalRecord, total)
-	copy(all, jm.archived)
-	copy(all[len(jm.archived):], jm.records)
-	return all
-}
-
 // HasInFlightTx returns true if there is an unconfirmed transaction in flight.
 func (jm *JournalManager) HasInFlightTx() bool {
 	jm.mu.Lock()
@@ -344,7 +333,7 @@ func (jm *JournalManager) ListHistory() []HistoryItem {
 	jm.mu.Lock()
 	defer jm.mu.Unlock()
 
-	records := jm.allRecordsLocked()
+	records := slices.Concat(jm.archived, jm.records)
 	winners := map[uint64]*JournalRecord{}
 	for _, r := range records {
 		if isMinedJournalState(r.State) {

@@ -270,8 +270,8 @@ func TestActivityRoutesStayLocalAndExportExactCSV(t *testing.T) {
 	}
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest("GET", "http://localhost:8090/api/wallet/activity?format=csv", nil))
-	if response.Code != 200 || !strings.HasPrefix(response.Header().Get("Content-Type"), "text/csv") || !strings.Contains(response.Body.String(), "amount_raw") || strings.Contains(response.Body.String(), "fixture-password") {
-		t.Fatalf("bad CSV: %d %s", response.Code, response.Body.String())
+	if response.Code != 200 || !strings.HasPrefix(response.Header().Get("Content-Type"), "text/csv") || !strings.Contains(response.Header().Get("Content-Disposition"), "flowledger-sepolia-activity.csv") || !strings.Contains(response.Body.String(), "amount_raw") || strings.Contains(response.Body.String(), "fixture-password") {
+		t.Fatalf("bad CSV: %d %s headers=%v", response.Code, response.Body.String(), response.Header())
 	}
 	response = httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "http://localhost:8090/api/wallet/activity?format=csv", nil)

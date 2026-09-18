@@ -50,11 +50,6 @@ func EthSignedMessageHash(hash common.Hash) common.Hash {
 	return crypto.Keccak256Hash(msgPrefix, hash.Bytes())
 }
 
-// ToEthSignedMessageHash 為 EthSignedMessageHash 之別名
-func ToEthSignedMessageHash(hash common.Hash) common.Hash {
-	return EthSignedMessageHash(hash)
-}
-
 // SignUserOpWithEthPrefix 通用輔助函式：先計算 UserOpHash，再加上個人簽名前綴後進行簽署
 func SignUserOpWithEthPrefix(signer UserOpSigner, userOp *UserOperation, entryPoint common.Address, chainID *big.Int) ([]byte, error) {
 	if signer == nil {
@@ -129,76 +124,6 @@ func (s *PrivateKeySigner) Wipe() {
 		wipePrivateKey(s.privKey)
 		s.privKey = nil
 	}
-}
-
-// EphemeralKeyProvider 定義取得臨時私鑰之回呼函式
-type EphemeralKeyProvider func() (*ecdsa.PrivateKey, error)
-
-// EphemeralSigner 支援動態解密私鑰、完成簽署後立即抹除私鑰之簽署者
-type EphemeralSigner struct {
-	address  common.Address
-	provider EphemeralKeyProvider
-}
-
-// NewEphemeralSigner 建立臨時簽署者
-func NewEphemeralSigner(address common.Address, provider EphemeralKeyProvider) *EphemeralSigner {
-	return &EphemeralSigner{
-		address:  address,
-		provider: provider,
-	}
-}
-
-// Address 回傳簽署者之以太坊地址
-func (s *EphemeralSigner) Address() common.Address {
-	return s.address
-}
-
-// SignHash 透過 provider 取得私鑰簽署，簽署完畢後立即執行記憶體抹除
-func (s *EphemeralSigner) SignHash(hash common.Hash) ([]byte, error) {
-	if s.provider == nil {
-		return nil, errors.New("erc4337: provider 不得為空")
-	}
-	privKey, err := s.provider()
-	if err != nil {
-		return nil, fmt.Errorf("erc4337: 取得簽署私鑰失敗: %w", err)
-	}
-	if privKey == nil || privKey.D == nil {
-		return nil, ErrNilPrivateKey
-	}
-	defer func() {
-		wipePrivateKey(privKey)
-	}()
-
-	derivedAddr := crypto.PubkeyToAddress(privKey.PublicKey)
-	if derivedAddr != s.address {
-		return nil, fmt.Errorf("erc4337: 私鑰地址 (%s) 與預期地址 (%s) 不符", derivedAddr.Hex(), s.address.Hex())
-	}
-
-	sig, err := crypto.Sign(hash.Bytes(), privKey)
-	if err != nil {
-		return nil, fmt.Errorf("erc4337: 簽署失敗: %w", err)
-	}
-	if len(sig) != 65 {
-		return nil, ErrInvalidSigLen
-	}
-	if sig[64] < 27 {
-		sig[64] += 27
-	}
-	return sig, nil
-}
-
-// SignUserOp 計算 UserOpHash 並完成簽署
-func (s *EphemeralSigner) SignUserOp(userOp *UserOperation, entryPoint common.Address, chainID *big.Int) ([]byte, error) {
-	hash, err := GetUserOpHash(userOp, entryPoint, chainID)
-	if err != nil {
-		return nil, fmt.Errorf("erc4337: 計算 userOpHash 失敗: %w", err)
-	}
-	return s.SignHash(hash)
-}
-
-// SignUserOpWithEthPrefix 支援以以太坊簽署訊息前綴簽署 UserOperation
-func (s *EphemeralSigner) SignUserOpWithEthPrefix(userOp *UserOperation, entryPoint common.Address, chainID *big.Int) ([]byte, error) {
-	return SignUserOpWithEthPrefix(s, userOp, entryPoint, chainID)
 }
 
 // KeystoreDecrypter 定義 Keystore 抽象解密介面，以依賴倒置避免與 internal/wallet 產生循環依賴

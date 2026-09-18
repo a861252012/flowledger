@@ -26,6 +26,9 @@ def verify(container, version, port=None):
     actual = subprocess.check_output(["docker", "exec", container, "/wallet", "--version"], text=True).strip()
     assert actual == version, "running binary version differs"
     headers = {"Host": urllib.parse.urlsplit(origin).netloc, "Origin": origin}
+    health_status, health_headers, health_body = request(port, "/healthz", headers=headers)
+    assert health_status == 200 and json.loads(health_body)["status"] == "ok", "application unhealthy"
+    assert health_headers.get("X-App-Version") == version, "HTTP revision differs"
     status, _, page = request(port, "/", headers={**headers, "Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document"})
     if env.get("SHARED_DEMO") == "true":
         assert status == 200 and b'/static/wallet.js' in page and b'/static/shared.js' in page, "shared workspace missing"

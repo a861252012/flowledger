@@ -99,10 +99,6 @@ func (qs *QuoteStore) Get(id string) (*BoundQuote, error) {
 	if !ok {
 		return nil, ErrQuoteNotFound
 	}
-	if now.After(q.ExpiresAt) {
-		delete(qs.quotes, quoteID)
-		return nil, ErrQuoteExpired
-	}
 	return q, nil
 }
 
@@ -216,68 +212,11 @@ func CreateQuote(ctx context.Context, provider ChainQuoteProvider, from common.A
 		calldata = []byte{}
 		methodName = "ETH transfer"
 
-	case ActionTransfer:
+	case ActionTransfer, ActionApprove:
 		if command.Contract == "" {
-			return nil, errors.New("代幣轉帳必須指定 contract 合約地址")
-		}
-		contractAddr = common.HexToAddress(string(command.Contract))
-		txTo = contractAddr
-		txValue = big.NewInt(0)
-
-		sym, dec, err := QueryERC20Metadata(ctx, provider, contractAddr)
-		if err != nil {
-			return nil, err
-		}
-		symbol, decimals = sym, dec
-		trustedSymbol, trustedDecimals, trusted := trustedEVMToken(provider.ChainID(), contractAddr)
-		var parsedAmount *big.Int
-		if trusted {
-			if sym != trustedSymbol || dec != trustedDecimals {
-				return nil, errors.New("RPC 回傳的代幣資料與內建登錄不符")
+			if action == ActionTransfer {
+				return nil, errors.New("代幣轉帳必須指定 contract 合約地址")
 			}
-			parsedAmount, err = ParseUnits(command.Amount, trustedDecimals)
-		} else {
-			parsedAmount, err = ParseRawTokenAmount(command.AmountRaw)
-			if err == nil {
-				amount = FormatUnits(parsedAmount, decimals)
-			}
-		}
-		if err != nil {
-			return nil, err
-		}
-		if parsedAmount.Sign() <= 0 {
-			return nil, errors.New("轉帳代幣數量必須大於 0")
-		}
-		amountRaw = parsedAmount
-
-		// Check sender token balance
-		bal, err := QueryERC20BalanceOf(ctx, provider, contractAddr, from)
-		if err != nil {
-			return nil, err
-		}
-		if bal.Cmp(parsedAmount) < 0 {
-			return nil, errors.New("代幣餘額不足")
-		}
-
-		calldata, err = erc20ABI.Pack("transfer", targetAddr, parsedAmount)
-		if err != nil {
-			return nil, err
-		}
-		methodName = "transfer"
-
-		// Independent decode verification
-		decoded, err := DecodeERC20Calldata(calldata, decimals)
-		if err != nil || decoded.Method != "transfer" || decoded.Target != targetAddr || decoded.RawAmount.Cmp(parsedAmount) != 0 {
-			return nil, errors.New("calldata 驗證失敗")
-		}
-
-		// Simulation check
-		if err := SimulateERC20Call(ctx, provider, from, contractAddr, calldata); err != nil {
-			return nil, err
-		}
-
-	case ActionApprove:
-		if command.Contract == "" {
 			return nil, errors.New("代幣授權必須指定 contract 合約地址")
 		}
 		contractAddr = common.HexToAddress(string(command.Contract))
@@ -305,32 +244,47 @@ func CreateQuote(ctx context.Context, provider ChainQuoteProvider, from common.A
 		if err != nil {
 			return nil, err
 		}
-		if parsedAmount.Cmp(maxUint256) == 0 {
-			return nil, ErrUnlimitedAllowanceNotAllowed
-		}
-		if parsedAmount.Sign() < 0 {
-			return nil, errors.New("授權數量不可為負數")
-		}
 		amountRaw = parsedAmount
+		if action == ActionTransfer {
+			if parsedAmount.Sign() <= 0 {
+				return nil, errors.New("轉帳代幣數量必須大於 0")
+			}
 
-		// Enforce revoke-to-zero before nonzero->nonzero approval to prevent race condition
-		currentAllowance, err := QueryERC20Allowance(ctx, provider, contractAddr, from, targetAddr)
+			// Check sender token balance
+			bal, err := QueryERC20BalanceOf(ctx, provider, contractAddr, from)
+			if err != nil {
+				return nil, err
+			}
+			if bal.Cmp(parsedAmount) < 0 {
+				return nil, errors.New("代幣餘額不足")
+			}
+		} else {
+			if parsedAmount.Cmp(maxUint256) == 0 {
+				return nil, ErrUnlimitedAllowanceNotAllowed
+			}
+			if parsedAmount.Sign() < 0 {
+				return nil, errors.New("授權數量不可為負數")
+			}
+
+			// Enforce revoke-to-zero before nonzero->nonzero approval to prevent race condition
+			currentAllowance, err := QueryERC20Allowance(ctx, provider, contractAddr, from, targetAddr)
+			if err != nil {
+				return nil, err
+			}
+			if currentAllowance.Sign() > 0 && parsedAmount.Sign() > 0 {
+				return nil, ErrApprovalRace
+			}
+		}
+
+		methodName = string(action)
+		calldata, err = erc20ABI.Pack(methodName, targetAddr, parsedAmount)
 		if err != nil {
 			return nil, err
 		}
-		if currentAllowance.Sign() > 0 && parsedAmount.Sign() > 0 {
-			return nil, ErrApprovalRace
-		}
-
-		calldata, err = erc20ABI.Pack("approve", targetAddr, parsedAmount)
-		if err != nil {
-			return nil, err
-		}
-		methodName = "approve"
 
 		// Independent decode verification
 		decoded, err := DecodeERC20Calldata(calldata, decimals)
-		if err != nil || decoded.Method != "approve" || decoded.Target != targetAddr || decoded.RawAmount.Cmp(parsedAmount) != 0 {
+		if err != nil || decoded.Method != methodName || decoded.Target != targetAddr || decoded.RawAmount.Cmp(parsedAmount) != 0 {
 			return nil, errors.New("calldata 驗證失敗")
 		}
 

@@ -388,7 +388,6 @@ func (s *SolanaService) History(ctx context.Context) ([]SolanaRecord, error) {
 				finalized = status.ConfirmationStatus == rpc.ConfirmationStatusFinalized
 				if status.Err != nil {
 					state = "execution_failed"
-					finalized = true
 				}
 			} else if heightErr == nil && height > record.LastValid {
 				state = "expired_unconfirmed"

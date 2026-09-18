@@ -101,7 +101,7 @@
   if (family !== 'evm') {
     const network = document.getElementById('network-select');
     network.value = '/' + family + '/';
-    network.addEventListener('change', () => { location.href = network.value; });
+    network.addEventListener('change', () => { location.href = network.value + (location.hash || ''); });
   }
   // Programmatic tutorial actions must reveal their target before focusing it.
   for (const id of ['prepare-self-transfer','prepare-first-wrap','sol-self','tron-self']) {

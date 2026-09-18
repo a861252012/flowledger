@@ -2,17 +2,31 @@ package chain
 
 import (
 	"context"
+	"errors"
 	"math/big"
+	"strings"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 )
+
+func checkRevertError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if _, ok := ethclient.RevertErrorData(err); ok {
+		return true
+	}
+	lower := strings.ToLower(err.Error())
+	return strings.Contains(lower, "execution reverted") || strings.Contains(lower, "vm execution error")
+}
 
 // CheckNetwork verifies that the connected node is on Ethereum Sepolia.
 func (c *Client) CheckNetwork(ctx context.Context) error {
-	return c.checkNetwork(ctx)
+	return c.verifyNetwork(ctx)
 }
 
 // HeaderByNumber returns the block header for the specified number, or latest if nil.
@@ -58,6 +72,12 @@ func (c *Client) CallContract(ctx context.Context, msg ethereum.CallMsg, blockNu
 	}
 	res, err := c.rpc.CallContract(ctx, msg, blockNumber)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			return nil, ErrTimeout
+		}
+		if checkRevertError(err) {
+			return nil, err
+		}
 		return nil, rpcError(err)
 	}
 	return res, nil

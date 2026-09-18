@@ -6,7 +6,8 @@
  async function api(path,body){const response=await fetch('/tron/api/'+path,{signal:AbortSignal.timeout(45000),...(body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json','X-Wallet-CSRF':state.csrfToken},body:JSON.stringify(body)})});const data=await response.json();if(!response.ok)throw new Error(data.error||'操作失敗');return data;}
  function error(err){$('tron-error').textContent=err.name==='TimeoutError'?'查詢逾時，結果未知；請先更新原交易紀錄。':err.message;}
  async function refresh(){if(!state?.exists||$('tron-refresh').disabled)return;$('tron-refresh').disabled=true;$('tron-error').textContent='';
-  const results=await Promise.allSettled([api('balance?address='+encodeURIComponent(state.address)),api('history')]);
+  const results=await Promise.allSettled([api('balance?address='+encodeURIComponent(state.address)),api('history'),api('status')]);
+  if(results[2].status==='fulfilled')state.csrfToken=results[2].value.csrfToken;
   if(results[0].status==='fulfilled'){$('tron-balance').textContent=results[0].value.trx+' TRX';$('tron-balance-time').textContent=`可用 Bandwidth ${results[0].value.bandwidth} · Energy ${results[0].value.energy} · ${results[0].value.active ? '帳戶已啟用' : '尚未啟用，請先領取 TRX'}`;}else{$('tron-balance').textContent='—';$('tron-balance-time').textContent='無法取得最新餘額';error(results[0].reason);}
   if(results[1].status==='fulfilled'){
    $('tron-history').replaceChildren();for(const tx of results[1].value.slice().reverse()){

@@ -14,13 +14,11 @@ import (
 
 // MockBundlerServer 提供執行緒安全之 Bundler JSON-RPC 測試模擬伺服器
 type MockBundlerServer struct {
-	mu           sync.RWMutex
-	server       *httptest.Server
-	requests     []JSONRPCRequest
-	receipts     map[common.Hash]*UserOperationReceipt
-	errors       map[string]*JSONRPCError
-	sendHandler  func(op *UserOperation, entryPoint common.Address) (common.Hash, error)
-	estimHandler func(op *UserOperation, entryPoint common.Address) (*GasEstimate, error)
+	mu       sync.RWMutex
+	server   *httptest.Server
+	requests []JSONRPCRequest
+	receipts map[common.Hash]*UserOperationReceipt
+	errors   map[string]*JSONRPCError
 }
 
 // NewMockBundlerServer 建立並啟動 Mock Bundler 伺服器
@@ -60,20 +58,6 @@ func (m *MockBundlerServer) SetError(method string, code int, message string) {
 	}
 }
 
-// OnSendUserOperation 自訂發送 UserOperation 之處理邏輯
-func (m *MockBundlerServer) OnSendUserOperation(handler func(op *UserOperation, entryPoint common.Address) (common.Hash, error)) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.sendHandler = handler
-}
-
-// OnEstimateGas 自訂 Gas 估算之處理邏輯
-func (m *MockBundlerServer) OnEstimateGas(handler func(op *UserOperation, entryPoint common.Address) (*GasEstimate, error)) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.estimHandler = handler
-}
-
 // RecordedRequests 回傳所有收到的 RPC 請求拷貝
 func (m *MockBundlerServer) RecordedRequests() []JSONRPCRequest {
 	m.mu.RLock()
@@ -98,8 +82,6 @@ func (m *MockBundlerServer) handleHTTP(w http.ResponseWriter, r *http.Request) {
 	m.mu.Lock()
 	m.requests = append(m.requests, req)
 	customErr := m.errors[req.Method]
-	sendH := m.sendHandler
-	estimH := m.estimHandler
 	m.mu.Unlock()
 
 	w.Header().Set("Content-Type", "application/json")
@@ -137,22 +119,10 @@ func (m *MockBundlerServer) handleHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		entryPoint := common.HexToAddress(entryPointHex)
 
-		var hash common.Hash
-		if sendH != nil {
-			h, err := sendH(&op, entryPoint)
-			if err != nil {
-				m.writeError(w, req.ID, ErrCodeValidationFailed, err.Error())
-				return
-			}
-			hash = h
-		} else {
-			// 預設以 UserOp 計算 hash
-			h, err := GetUserOpHash(&op, entryPoint, big.NewInt(11155111))
-			if err != nil {
-				m.writeError(w, req.ID, ErrCodeValidationFailed, err.Error())
-				return
-			}
-			hash = h
+		hash, err := GetUserOpHash(&op, entryPoint, big.NewInt(11155111))
+		if err != nil {
+			m.writeError(w, req.ID, ErrCodeValidationFailed, err.Error())
+			return
 		}
 
 		resBytes, _ := json.Marshal(hexutil.Encode(hash.Bytes()))
@@ -167,26 +137,10 @@ func (m *MockBundlerServer) handleHTTP(w http.ResponseWriter, r *http.Request) {
 			m.writeError(w, req.ID, ErrCodeInvalidParams, "參數不足")
 			return
 		}
-		var op UserOperation
-		opBytes, _ := json.Marshal(req.Params[0])
-		_ = json.Unmarshal(opBytes, &op)
-		entryPointHex, _ := req.Params[1].(string)
-		entryPoint := common.HexToAddress(entryPointHex)
-
-		var est *GasEstimate
-		if estimH != nil {
-			res, err := estimH(&op, entryPoint)
-			if err != nil {
-				m.writeError(w, req.ID, ErrCodeValidationFailed, err.Error())
-				return
-			}
-			est = res
-		} else {
-			est = &GasEstimate{
-				PreVerificationGas:   big.NewInt(50000),
-				VerificationGasLimit: big.NewInt(100000),
-				CallGasLimit:         big.NewInt(200000),
-			}
+		est := &GasEstimate{
+			PreVerificationGas:   big.NewInt(50000),
+			VerificationGasLimit: big.NewInt(100000),
+			CallGasLimit:         big.NewInt(200000),
 		}
 
 		resBytes, _ := json.Marshal(est)
