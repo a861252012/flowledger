@@ -6,7 +6,9 @@ const { chromium } = require('playwright');
 (async () => {
   const baseURL = process.env.WALLET_DEMO_URL;
   const revision = process.env.EXPECTED_REVISION;
+  const expectedVault = process.env.EXPECTED_VAULT_ADDRESS;
   assert.ok(baseURL && revision, 'WALLET_DEMO_URL and EXPECTED_REVISION are required');
+  if (expectedVault) assert.match(expectedVault, /^0x[0-9a-fA-F]{40}$/, 'EXPECTED_VAULT_ADDRESS must be an EVM address');
 
   // The VM polls releases after CI publishes; a healthy old revision is not success.
   const deadline = Date.now() + 10 * 60 * 1000;
@@ -42,15 +44,23 @@ const { chromium } = require('playwright');
     const vaultResponse = await context.request.get('/api/wallet/vault');
     assert.equal(vaultResponse.status(), 200);
     const vault = await vaultResponse.json();
-    if (!vault.enabled) {
-      await page.waitForFunction(() => document.querySelector('#vault-status').textContent === window.FlowI18n.t('存款箱尚未啟用。'));
-      assert.equal(await page.locator('#vault-deposit').isDisabled(), true);
-      assert.equal(await page.locator('#vault-withdraw').isDisabled(), true);
-    } else {
-      await page.waitForFunction(contract => document.querySelector('#vault-contract-view').textContent.toLowerCase().includes(contract.toLowerCase()), vault.contract);
-      assert.equal(await page.locator('#vault-deposit').isEnabled(), true);
+    assert.equal(typeof vault.enabled, 'boolean', 'vault API explicitly reports enabled or disabled');
+    if (expectedVault) {
+      assert.equal(vault.enabled, true, 'the expected deployed vault must be enabled');
+      assert.equal(vault.contract?.toLowerCase(), expectedVault.toLowerCase(), 'server uses the expected deployed contract');
     }
-    console.log(`PASS: EVM navigation; vault ${vault.enabled ? 'enabled' : 'disabled (no deployed contract configured)'}`);
+    if (!vault.enabled) {
+      await page.waitForFunction(() => document.querySelector('#vault-status').textContent === window.FlowI18n.t('此環境尚未開放合約操作'));
+      for (const selector of ['#vault-form', '#vault-summary', '#vault-history-section']) {
+        assert.equal(await page.locator(selector).isVisible(), false);
+      }
+    } else {
+      await page.waitForFunction(contract => document.querySelector('#vault-contract-view a')?.href.toLowerCase().includes(contract.toLowerCase()), vault.contract);
+      assert.equal(await page.locator('#vault-preview').isEnabled(), true);
+      assert.equal(await page.locator('#vault-form').isVisible(), true);
+    }
+    console.log(`PASS: read-only EVM navigation; vault ${vault.enabled ? 'enabled' : 'disabled (no deployed contract configured)'}`);
+    console.log('SCOPE: UI and configuration only; no deposit, withdrawal or public Sepolia receipt acceptance');
 
     await page.locator('#app-sidebar a[href="#history-panel"]').click();
     for (const family of ['solana', 'tron']) {

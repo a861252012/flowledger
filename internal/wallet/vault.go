@@ -104,7 +104,7 @@ func QueryVaultBalanceOf(ctx context.Context, caller ChainCaller, contract, acco
 	}
 	var balance *big.Int
 	if err := ethVaultABI.UnpackIntoInterface(&balance, "balanceOf", res); err != nil {
-		return nil, errors.New("無法解析存款箱餘額返回值")
+		return nil, errors.New("無法讀取合約回傳的餘額")
 	}
 	return balance, nil
 }
@@ -133,21 +133,21 @@ func decodeVaultError(err error) error {
 	}
 	data, decodeErr := hexutil.Decode(rawData)
 	if decodeErr != nil || len(data) < 4 {
-		return errors.New("存款箱合約模擬執行失敗，未送出交易")
+		return errors.New("合約預先檢查未通過，交易尚未送出")
 	}
 	switch hexutil.Encode(data[:4]) {
 	case "0x56316e87":
-		return errors.New("存款金額必須大於 0")
+		return errors.New("存入金額必須大於 0")
 	case "0xb8cb6219":
-		return errors.New("提款金額必須大於 0")
+		return errors.New("取回金額必須大於 0")
 	case "0xcf479181":
-		return errors.New("存款箱餘額不足以提款")
+		return errors.New("合約餘額不足，請減少取回金額")
 	case "0x37ed32e8":
 		return errors.New("拒絕重入呼叫")
 	case "0x90b8ec18":
 		return errors.New("合約轉帳失敗")
 	default:
-		return errors.New("存款箱合約模擬執行失敗，未送出交易")
+		return errors.New("合約預先檢查未通過，交易尚未送出")
 	}
 }
 

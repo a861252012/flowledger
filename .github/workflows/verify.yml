@@ -46,8 +46,19 @@ jobs:
           cache-dependency-path: tests/browser/package-lock.json
       - run: npm ci --prefix tests/browser
       - run: cd tests/browser && npx playwright install --with-deps chromium
-      - run: npm test --prefix tests/browser
-      - run: npm run test:e2e --prefix tests/browser
+      - name: Browser fixtures and local simulated EVM E2E
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p test-results
+          npm test --prefix tests/browser 2>&1 | tee test-results/browser-fixtures.log
+          npm run test:e2e --prefix tests/browser 2>&1 | tee test-results/browser-e2e.log
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: browser-test-logs
+          path: test-results/browser-*.log
+          retention-days: 14
   deployment:
     strategy:
       fail-fast: false
@@ -107,8 +118,19 @@ jobs:
       - name: Verify deployed revision and browser flows
         env:
           EXPECTED_REVISION: ${{ github.sha }}
+          EXPECTED_VAULT_ADDRESS: ${{ vars.EXPECTED_VAULT_ADDRESS }}
           WALLET_DEMO_URL: https://wallet.tedlin.fyi
-        run: npm run test:live --prefix tests/browser
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p test-results
+          npm run test:live --prefix tests/browser 2>&1 | tee test-results/live.log
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: live-ui-test-log
+          path: test-results/live.log
+          retention-days: 14
   vulnerabilities:
     runs-on: ubuntu-latest
     timeout-minutes: 15

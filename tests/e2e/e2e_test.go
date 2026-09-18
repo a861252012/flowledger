@@ -336,6 +336,7 @@ func deployContract(t *testing.T, sim *simulated.Backend, transactor *bind.Trans
 }
 
 func TestE2EVaultFullLifecycle(t *testing.T) {
+	t.Log("[ENV] Local HTTP + Go + simulated EVM; deposit 0.5 ETH, withdraw 0.2 ETH, remaining 0.3 ETH; no public Sepolia RPC")
 	var simMu sync.Mutex
 	deployerKey, _ := crypto.GenerateKey()
 	deployerTransactor, _ := bind.NewKeyedTransactorWithChainID(deployerKey, big.NewInt(chain.SepoliaID))
@@ -351,7 +352,7 @@ func TestE2EVaultFullLifecycle(t *testing.T) {
 	// 1. Deploy compiled ETHVault contract
 	artifactPath := filepath.Join("..", "..", "contracts", "artifacts", "ETHVault.json")
 	vaultAddr, vaultABI := deployContract(t, sim, deployerTransactor, artifactPath)
-	t.Logf("ETHVault deployed at %s", vaultAddr.Hex())
+	t.Logf("ETHVault deployed on local simulated EVM at %s", vaultAddr.Hex())
 
 	// 2. Start simulated JSON-RPC server
 	rpcServer := startSimulatedRPC(t, sim, &simMu)
@@ -466,7 +467,7 @@ func TestE2EVaultFullLifecycle(t *testing.T) {
 		t.Fatalf("initial vault status mismatch: %#v", vaultData)
 	}
 
-	// Step D: Real Vault Deposit (0.5 ETH)
+	// Step D: Local simulated EVM deposit (0.5 ETH)
 	depositAmount := "0.5"
 	resp, quoteData := doJSON("POST", "/api/wallet/quote", map[string]string{
 		"action": "vault_deposit",
@@ -488,19 +489,22 @@ func TestE2EVaultFullLifecycle(t *testing.T) {
 	depositTxHash := common.HexToHash(sendData["hash"].(string))
 	t.Logf("Deposit transaction broadcast: %s", depositTxHash.Hex())
 
-	// Verify on-chain execution receipt
+	// Verify the local simulated EVM execution receipt
 	simMu.Lock()
 	receipt, err := sim.Client().TransactionReceipt(context.Background(), depositTxHash)
 	simMu.Unlock()
-	if err != nil || receipt.Status != 1 {
+	if err != nil || receipt == nil || receipt.Status != 1 {
 		t.Fatalf("deposit receipt status not 1: %v", err)
+	}
+	if len(receipt.Logs) != 1 {
+		t.Fatalf("deposit expected one vault event, got %d", len(receipt.Logs))
 	}
 
 	// Verify ETHVault Deposited event emitted
 	depositedTopic := crypto.Keccak256Hash([]byte("Deposited(address,uint256)"))
 	foundDepositEvent := false
 	for _, l := range receipt.Logs {
-		if l.Address == vaultAddr && len(l.Topics) > 0 && l.Topics[0] == depositedTopic {
+		if l.Address == vaultAddr && len(l.Topics) == 2 && l.Topics[0] == depositedTopic {
 			accountInEvent := common.BytesToAddress(l.Topics[1].Bytes())
 			if accountInEvent != userWalletAddr {
 				t.Fatalf("event account mismatch: got %s, want %s", accountInEvent.Hex(), userWalletAddr.Hex())
@@ -546,9 +550,30 @@ func TestE2EVaultFullLifecycle(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET /api/wallet/history after deposit: code %d", resp.StatusCode)
 	}
-	t.Logf("History refreshed: %#v", historyData)
+	assertHistory := func(data map[string]any, hash common.Hash, action, amount string) {
+		t.Helper()
+		if refreshError, _ := data["refreshError"].(string); refreshError != "" {
+			t.Fatalf("history refresh failed: %s", refreshError)
+		}
+		transactions, ok := data["transactions"].([]any)
+		if !ok {
+			t.Fatal("history transactions missing")
+		}
+		for _, value := range transactions {
+			transaction, ok := value.(map[string]any)
+			if !ok || transaction["hash"] != hash.Hex() {
+				continue
+			}
+			if transaction["action"] != action || transaction["amount"] != amount || transaction["state"] != "succeeded" {
+				t.Fatalf("history mismatch for %s: action=%v amount=%v state=%v", hash.Hex(), transaction["action"], transaction["amount"], transaction["state"])
+			}
+			return
+		}
+		t.Fatalf("history missing transaction %s", hash.Hex())
+	}
+	assertHistory(historyData, depositTxHash, "vault_deposit", depositAmount)
 
-	// Step E: Real Vault Withdrawal (0.2 ETH)
+	// Step E: Local simulated EVM withdrawal (0.2 ETH)
 	withdrawAmount := "0.2"
 	resp, withQuoteData := doJSON("POST", "/api/wallet/quote", map[string]string{
 		"action": "vault_withdraw",
@@ -570,19 +595,22 @@ func TestE2EVaultFullLifecycle(t *testing.T) {
 	withTxHash := common.HexToHash(withSendData["hash"].(string))
 	t.Logf("Withdraw transaction broadcast: %s", withTxHash.Hex())
 
-	// Verify on-chain execution receipt
+	// Verify the local simulated EVM execution receipt
 	simMu.Lock()
 	withReceipt, err := sim.Client().TransactionReceipt(context.Background(), withTxHash)
 	simMu.Unlock()
-	if err != nil || withReceipt.Status != 1 {
+	if err != nil || withReceipt == nil || withReceipt.Status != 1 {
 		t.Fatalf("withdraw receipt status not 1: %v", err)
+	}
+	if len(withReceipt.Logs) != 1 {
+		t.Fatalf("withdraw expected one vault event, got %d", len(withReceipt.Logs))
 	}
 
 	// Verify ETHVault Withdrawn event emitted
 	withdrawnTopic := crypto.Keccak256Hash([]byte("Withdrawn(address,uint256)"))
 	foundWithdrawEvent := false
 	for _, l := range withReceipt.Logs {
-		if l.Address == vaultAddr && len(l.Topics) > 0 && l.Topics[0] == withdrawnTopic {
+		if l.Address == vaultAddr && len(l.Topics) == 2 && l.Topics[0] == withdrawnTopic {
 			accountInEvent := common.BytesToAddress(l.Topics[1].Bytes())
 			if accountInEvent != userWalletAddr {
 				t.Fatalf("withdraw event account mismatch: got %s, want %s", accountInEvent.Hex(), userWalletAddr.Hex())
@@ -623,10 +651,13 @@ func TestE2EVaultFullLifecycle(t *testing.T) {
 	}
 
 	// Refresh wallet history to finalize withdraw transaction in journal
-	resp, _ = doJSON("GET", "/api/wallet/history", nil, "")
+	resp, historyData = doJSON("GET", "/api/wallet/history", nil, "")
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET /api/wallet/history after withdraw: code %d", resp.StatusCode)
 	}
+	assertHistory(historyData, depositTxHash, "vault_deposit", depositAmount)
+	assertHistory(historyData, withTxHash, "vault_withdraw", withdrawAmount)
+	t.Log("[PASS] Local simulated EVM: both transaction hashes have successful receipts, matching events, balances and history")
 
 	// Step F: Adversarial / Edge Cases:
 	// 1. Over-withdrawal (trying to withdraw 0.4 ETH when only 0.3 ETH in vault)
@@ -638,7 +669,7 @@ func TestE2EVaultFullLifecycle(t *testing.T) {
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("over-withdrawal quote should fail, got %d", resp.StatusCode)
 	}
-	if overQuoteData["error"] != "存款箱餘額不足以提款" {
+	if overQuoteData["error"] != "合約餘額不足，請減少取回金額" {
 		t.Fatalf("unexpected over-withdrawal error: %v", overQuoteData["error"])
 	}
 	t.Logf("Over-withdrawal correctly rejected: %v", overQuoteData["error"])
@@ -652,7 +683,7 @@ func TestE2EVaultFullLifecycle(t *testing.T) {
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("zero deposit should fail, got %d", resp.StatusCode)
 	}
-	if zeroDepositData["error"] != "存款金額必須大於 0" {
+	if zeroDepositData["error"] != "存入金額必須大於 0" {
 		t.Fatalf("unexpected zero deposit error: %v", zeroDepositData["error"])
 	}
 	t.Logf("Zero deposit correctly rejected: %v", zeroDepositData["error"])
@@ -666,7 +697,7 @@ func TestE2EVaultFullLifecycle(t *testing.T) {
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("zero withdrawal should fail, got %d", resp.StatusCode)
 	}
-	if zeroWithdrawData["error"] != "提款金額必須大於 0" {
+	if zeroWithdrawData["error"] != "取回金額必須大於 0" {
 		t.Fatalf("unexpected zero withdrawal error: %v", zeroWithdrawData["error"])
 	}
 	t.Logf("Zero withdrawal correctly rejected: %v", zeroWithdrawData["error"])
@@ -680,12 +711,27 @@ func TestE2EVaultFullLifecycle(t *testing.T) {
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("wrong target quote should fail, got %d", resp.StatusCode)
 	}
-	if wrongTargetData["error"] != "存款箱目標地址不符" {
+	if wrongTargetData["error"] != "合約操作的錢包地址不符，請重新預估" {
 		t.Fatalf("unexpected wrong target error: %v", wrongTargetData["error"])
 	}
 	t.Logf("Wrong target address correctly rejected: %v", wrongTargetData["error"])
 
-	// 5. CSRF defense: unauthorized request rejected with 403
+	// 5. Client cannot specify contract address for vault operations
+	resp, clientContractData := doJSON("POST", "/api/wallet/quote", map[string]string{
+		"action":   "vault_deposit",
+		"amount":   "0.1",
+		"to":       userWalletAddr.Hex(),
+		"contract": deployerTransactor.From.Hex(),
+	}, csrfToken)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("client contract specification should fail, got %d", resp.StatusCode)
+	}
+	if clientContractData["error"] != "合約地址由伺服器設定，無法在操作時變更" {
+		t.Fatalf("unexpected client contract error: %v", clientContractData["error"])
+	}
+	t.Logf("Client contract address correctly rejected: %v", clientContractData["error"])
+
+	// 6. CSRF defense: unauthorized request rejected with 403
 	resp, _ = doJSON("POST", "/api/wallet/quote", map[string]string{
 		"action": "vault_deposit",
 		"amount": "0.1",
@@ -698,6 +744,7 @@ func TestE2EVaultFullLifecycle(t *testing.T) {
 }
 
 func TestE2EVaultBrowser(t *testing.T) {
+	t.Log("[ENV] Local Chromium + Go + simulated EVM; deposit 0.05 ETH, withdraw 0.02 ETH, remaining 0.03 ETH")
 	required := os.Getenv("RUN_BROWSER_E2E") == "1"
 	if testing.Short() {
 		if required {
@@ -732,7 +779,7 @@ func TestE2EVaultBrowser(t *testing.T) {
 	defer sim.Close()
 
 	artifactPath := filepath.Join("..", "..", "contracts", "artifacts", "ETHVault.json")
-	vaultAddr, _ := deployContract(t, sim, deployerTransactor, artifactPath)
+	vaultAddr, vaultABI := deployContract(t, sim, deployerTransactor, artifactPath)
 
 	rpcServer := startSimulatedRPC(t, sim, &simMu)
 	chainClient, err := chain.NewNetwork(chain.SepoliaID, []string{rpcServer.URL})
@@ -797,6 +844,7 @@ func TestE2EVaultBrowser(t *testing.T) {
 	scriptPath := filepath.Join("..", "browser", "e2e.cjs")
 	cmd := exec.Command(nodeBin, scriptPath)
 	cmd.Env = append(os.Environ(),
+		"E2E_BACKEND=simulated",
 		"E2E_BASE_URL="+webServer.URL,
 		"E2E_PASSWORD="+password,
 		"E2E_VAULT="+vaultAddr.Hex(),
@@ -806,9 +854,57 @@ func TestE2EVaultBrowser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("browser e2e failed: %v", err)
 	}
+
+	// Check the browser's transactions independently of DOM text and API responses.
+	history, err := walletService.History(context.Background())
+	if err != nil {
+		t.Fatalf("browser transaction history: %v", err)
+	}
+	if history.RefreshError != "" || len(history.Transactions) != 2 {
+		t.Fatalf("expected two verified browser transactions: count=%d refreshError=%s", len(history.Transactions), history.RefreshError)
+	}
+	expected := map[string]struct {
+		amount string
+		wei    int64
+		event  string
+	}{
+		"vault_deposit":  {"0.05", 50_000_000_000_000_000, "Deposited"},
+		"vault_withdraw": {"0.02", 20_000_000_000_000_000, "Withdrawn"},
+	}
+	simMu.Lock()
+	defer simMu.Unlock()
+	for _, transaction := range history.Transactions {
+		want, ok := expected[transaction.Action]
+		if !ok || transaction.Amount != want.amount || transaction.State != "succeeded" {
+			t.Fatalf("unexpected browser transaction: action=%s amount=%s state=%s", transaction.Action, transaction.Amount, transaction.State)
+		}
+		delete(expected, transaction.Action)
+		receipt, err := sim.Client().TransactionReceipt(context.Background(), common.HexToHash(transaction.Hash))
+		if err != nil || receipt == nil || receipt.Status != types.ReceiptStatusSuccessful {
+			t.Fatalf("browser %s receipt failed: %v", transaction.Action, err)
+		}
+		if len(receipt.Logs) != 1 {
+			t.Fatalf("browser %s expected one vault event, got %d", transaction.Action, len(receipt.Logs))
+		}
+		event := receipt.Logs[0]
+		if event.Address != vaultAddr || len(event.Topics) != 2 || event.Topics[0] != vaultABI.Events[want.event].ID ||
+			common.BytesToAddress(event.Topics[1].Bytes()) != userWalletAddr || new(big.Int).SetBytes(event.Data).Cmp(big.NewInt(want.wei)) != 0 {
+			t.Fatalf("browser %s event does not match its contract, account and amount", transaction.Action)
+		}
+	}
+	boundVault := bind.NewBoundContract(vaultAddr, vaultABI, sim.Client(), sim.Client(), sim.Client())
+	var balance []any
+	if err := boundVault.Call(&bind.CallOpts{Context: context.Background()}, &balance, "balanceOf", userWalletAddr); err != nil {
+		t.Fatalf("browser final vault balance: %v", err)
+	}
+	if len(balance) != 1 || balance[0].(*big.Int).Cmp(big.NewInt(30_000_000_000_000_000)) != 0 {
+		t.Fatal("browser final vault balance must be 0.03 ETH on the local simulated EVM")
+	}
+	t.Log("[PASS] Independent local EVM verification: browser deposit/withdraw receipts status=1, matching events and balanceOf=0.03 ETH")
 }
 
 func TestE2EVaultRevertDataPropagation(t *testing.T) {
+	t.Log("[ENV] Revert data propagation from local simulated EVM; no public Sepolia RPC")
 	var simMu sync.Mutex
 	deployerKey, _ := crypto.GenerateKey()
 	deployerTransactor, _ := bind.NewKeyedTransactorWithChainID(deployerKey, big.NewInt(chain.SepoliaID))
@@ -840,8 +936,8 @@ func TestE2EVaultRevertDataPropagation(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = wallet.SimulateVaultCall(ctx, chainClient, userAddr, vaultAddr, big.NewInt(0), depData)
-	if err == nil || err.Error() != "存款金額必須大於 0" {
-		t.Fatalf("expected ZeroDeposit revert decoded to '存款金額必須大於 0', got: %v", err)
+	if err == nil || err.Error() != "存入金額必須大於 0" {
+		t.Fatalf("expected ZeroDeposit revert decoded to '存入金額必須大於 0', got: %v", err)
 	}
 
 	// 2. Zero-amount withdrawal revert (ZeroWithdraw -> 0xb8cb6219)
@@ -850,8 +946,8 @@ func TestE2EVaultRevertDataPropagation(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = wallet.SimulateVaultCall(ctx, chainClient, userAddr, vaultAddr, big.NewInt(0), withdrawZeroData)
-	if err == nil || err.Error() != "提款金額必須大於 0" {
-		t.Fatalf("expected ZeroWithdraw revert decoded to '提款金額必須大於 0', got: %v", err)
+	if err == nil || err.Error() != "取回金額必須大於 0" {
+		t.Fatalf("expected ZeroWithdraw revert decoded to '取回金額必須大於 0', got: %v", err)
 	}
 
 	// 3. Insufficient balance withdrawal revert (InsufficientBalance -> 0xcf479181)
@@ -860,7 +956,7 @@ func TestE2EVaultRevertDataPropagation(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = wallet.SimulateVaultCall(ctx, chainClient, userAddr, vaultAddr, big.NewInt(0), withdrawOverData)
-	if err == nil || err.Error() != "存款箱餘額不足以提款" {
-		t.Fatalf("expected InsufficientBalance revert decoded to '存款箱餘額不足以提款', got: %v", err)
+	if err == nil || err.Error() != "合約餘額不足，請減少取回金額" {
+		t.Fatalf("expected InsufficientBalance revert decoded to '合約餘額不足，請減少取回金額', got: %v", err)
 	}
 }

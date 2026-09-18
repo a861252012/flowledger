@@ -281,3 +281,39 @@ body[data-wallet-family="showcase"] .wallet-work-grid { display: grid; grid-temp
 
 .activity-toolbar a[aria-current="page"] { background: var(--accent-soft, #e1f1ec); color: var(--accent, #136b57); font-weight: 700; }
 #contact-form { margin-bottom: 24px; }
+
+/* ETH contract interaction shares the wallet's confirmation and signing flow. */
+#vault-panel { max-width: 780px; margin-inline: auto; }
+.vault-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.vault-heading h2 { margin: 0; }
+.vault-heading .eyebrow { margin: 0 0 6px; }
+.vault-heading .state-badge { flex-shrink: 0; }
+.vault-rules { font-size: 13px; color: var(--muted); margin: 8px 0; }
+.vault-shared { font-size: 13px; padding: 12px 16px; background: var(--warning-bg); color: var(--warning-ink); border-radius: 10px; }
+.vault-notice { margin-top: 20px; padding: 16px 20px; background: var(--elevated); border-radius: 12px; }
+.vault-notice p { margin: 0; font-size: 14px; }
+.vault-notice .field-hint { margin-top: 6px; }
+.vault-balances { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; margin-top: 24px; }
+.vault-balances > div { padding: 18px; border: 1px solid var(--border); border-radius: 12px; min-width: 0; }
+.vault-balances > div:last-child { background: var(--accent-bg); border-color: var(--accent-bg); }
+.vault-balances span, .vault-balances small { display: block; font-size: 13px; color: var(--muted); }
+.vault-balances strong { display: block; font-size: clamp(20px,3vw,28px); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; margin: 6px 0; }
+.vault-operation { border: 0; padding: 0; margin: 0; min-width: 0; }
+.vault-operation legend { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+.vault-operation > div { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+#vault-form .vault-operation label { display: flex; align-items: center; justify-content: flex-start; gap: 8px; min-height: 48px; padding: 12px; margin: 0; border: 1px solid var(--control-border); border-radius: 10px; cursor: pointer; }
+.vault-operation label span { color: inherit; font-size: 14px; font-weight: 600; }
+#vault-form .vault-operation label:has(input:checked) { background: var(--accent-bg); border-color: var(--accent); color: var(--green); }
+.vault-operation input { width: 18px; height: 18px; min-height: 0; margin: 0; accent-color: var(--green); flex-shrink: 0; }
+.vault-direction { margin: 12px 0 20px; color: var(--green); font-size: 14px; }
+#vault-preview { width: 100%; }
+.vault-funding, #vault-contract-view a, #vault-panel details a { display: inline-flex; align-items: center; min-height: 44px; color: var(--green); font-size: 13px; text-underline-offset: 4px; }
+#vault-panel .advanced-info { font-size: 14px; }
+#vault-history-section { border-top: 1px solid var(--border); margin-top: 20px; padding-top: 20px; }
+#vault-history-section h3 { margin: 0; font-size: 16px; }
+#vault-history { font-size: 13px; overflow-wrap: anywhere; }
+@media (max-width: 420px) {
+  .vault-balances { grid-template-columns: 1fr; gap: 8px; }
+  .vault-balances > div { padding: 14px 16px; }
+  .vault-balances strong { font-size: 22px; }
+}

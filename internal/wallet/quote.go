@@ -141,13 +141,13 @@ func CreateQuote(ctx context.Context, provider ChainQuoteProvider, from common.A
 	switch action {
 	case ActionVaultDeposit, ActionVaultWithdraw:
 		if provider.ChainID() != 11155111 {
-			return nil, errors.New("存款箱目前僅支援 Ethereum Sepolia 測試網")
+			return nil, errors.New("此合約目前僅支援 Ethereum Sepolia 測試網")
 		}
 		if command.Contract == "" {
-			return nil, errors.New("尚未配置存款箱合約地址")
+			return nil, errors.New("尚未設定合約地址，暫時無法操作")
 		}
 		if targetAddr != from {
-			return nil, errors.New("存款箱目標地址不符")
+			return nil, errors.New("合約操作的錢包地址不符，請重新預估")
 		}
 		parsedAmount, err := ParseUnits(command.Amount, 18)
 		if err != nil {
@@ -155,9 +155,9 @@ func CreateQuote(ctx context.Context, provider ChainQuoteProvider, from common.A
 		}
 		if parsedAmount.Sign() <= 0 {
 			if action == ActionVaultWithdraw {
-				return nil, errors.New("提款金額必須大於 0")
+				return nil, errors.New("取回金額必須大於 0")
 			}
-			return nil, errors.New("存款金額必須大於 0")
+			return nil, errors.New("存入金額必須大於 0")
 		}
 		contractAddr = common.HexToAddress(string(command.Contract))
 		if err := VerifyContractBytecode(ctx, provider, contractAddr); err != nil {
@@ -174,7 +174,7 @@ func CreateQuote(ctx context.Context, provider ChainQuoteProvider, from common.A
 				return nil, balanceErr
 			}
 			if balance.Cmp(parsedAmount) < 0 {
-				return nil, errors.New("存款箱餘額不足以提款")
+				return nil, errors.New("合約餘額不足，請減少取回金額")
 			}
 			txValue = big.NewInt(0)
 			methodName = "withdraw(uint256)"

@@ -1,6 +1,7 @@
 import json
 import os
 from pathlib import Path
+import shlex
 import subprocess
 import tempfile
 import unittest
@@ -13,15 +14,15 @@ OLD = "ghcr.io/a861252012/testnet-wallet-lab@sha256:" + "d" * 64
 
 class DeployTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix="wallet-deploy-fixture-")
+        self.temp = tempfile.TemporaryDirectory(prefix="wallet deploy fixture-")
         self.addCleanup(self.temp.cleanup)
         self.base = Path(self.temp.name)
         self.bin = self.base / "bin"
         self.bin.mkdir()
         self.env = {**os.environ, "FIXTURE": str(self.base), "FIXTURE_MAIN": SHA}
         source = (ROOT / "scripts/deploy/deploy.sh").read_text()
-        source = source.replace("readonly base=/opt/testnet-wallet-lab", f"readonly base={self.base}")
-        source = source.replace("export PATH=/usr/sbin:/usr/bin:/sbin:/bin", f"export PATH={self.bin}:" + os.environ["PATH"])
+        source = source.replace("readonly base=/opt/testnet-wallet-lab", "readonly base=" + shlex.quote(str(self.base)))
+        source = source.replace("export PATH=/usr/sbin:/usr/bin:/sbin:/bin", "export PATH=" + shlex.quote(str(self.bin) + os.pathsep + os.environ["PATH"]))
         self.script = self.base / "deploy.sh"
         self.script.write_text(source)
         (self.base / "current-image").write_text(OLD + "\n")

@@ -79,6 +79,7 @@ CI live job → 等待 HTTPS /healthz 回報相同 commit → Chromium 桌面／
 ```
 
 Repository Variables：`DEMO_DEPLOY_ENABLED=true`（所有前置完成後）、`DEMO_RUNNER=ubuntu-latest`。
+合約部署並在 VM 啟用後，可設定 repository variable `EXPECTED_VAULT_ADDRESS`；workflow 會將它傳給 `live` 檢查預期地址。這個值只設定 CI 的驗收預期，不會代替 VM 的 `SEPOLIA_VAULT_ADDRESS` 或部署合約。
 PR 不發布；publish 只用 workflow 內建 GITHUB_TOKEN packages:write。不要給 PR 部署 secrets。
 GHCR package 必須 Public，VM 不保存 GitHub credentials。Repo 為公開不代表 package 自動公開。
 設定 main ruleset 禁止 force push，要求必要 CI 檢查；變更 GitHub 權限需另行確認。
@@ -95,6 +96,23 @@ timer 在前一次結束後約 120 秒再檢查，不是即時 webhook。CI 未�
 `publish` 成功代表 image 已發布；後續 `live` job 最多等待 10 分鐘，要求 HTTPS `/healthz` 的 `X-App-Version` 等於這次 commit，接著測試 EVM 面板、Solana/TRON 網路切換保留活動頁、手機選單與頁面錯誤。版本未更新或瀏覽器驗證失敗，workflow 會標示失敗。`live` 不簽名、送款或建立錢包；存款箱未配置時只驗證停用狀態，合約存提款由部署前的本機模擬 EVM E2E 驗證。
 這是「push 後自動更新」，所需時間為 CI/build 加上最長約兩分鐘的輪詢等待及映像檔下載／啟動；不是 push 當下立即切換。連續推送時會取消同分支尚未完成的舊 workflow，server 也只接受最新 main。
 無 CI 入站 SSH/Access 或 GitHub deploy secret。
+
+### UI 發布與合約啟用分開驗收
+
+未設定 `SEPOLIA_VAULT_ADDRESS` 時，`live` 會驗證停用提示及表單隱藏。這代表新版 UI 正確發布；合約存提仍待部署與啟用。`live` 全程不簽署、不領取測試幣，也不驗收存提收據。
+
+公共 Sepolia 合約部署及原始碼驗證完成後，在 VM 設定地址、重啟服務，再執行下列唯讀檢查。將佔位字替換為實際的發布 commit 與已核對合約地址：
+
+```sh
+EXPECTED_REVISION='<完整發布 commit SHA>' \
+EXPECTED_VAULT_ADDRESS='<已驗證的 0x 合約地址>' \
+WALLET_DEMO_URL='https://wallet.tedlin.fyi' \
+npm run test:live --prefix tests/browser
+```
+
+指定 `EXPECTED_VAULT_ADDRESS` 後，合約停用或地址不符都會失敗。CI 從同名 repository variable 傳入；未設定時為空字串，依 API 回報檢查啟用或停用 UI，不強制指定地址。完成這項檢查後，仍需依 [ETH 存提操作](eth-vault.md#啟用方式需要另行部署) 完成兩筆公共 Sepolia 交易的收據、事件及前後餘額驗收。
+
+CI 的 `browser-test-logs` 與 `live-ui-test-log` artifact 保存 14 天，測試失敗時也會嘗試上傳已產生的 log；依該 Actions run 的 commit 追溯。安裝階段即失敗時可能沒有測試 log，應查看該步驟的 Actions log。需要長期留存時，在到期前保存不含機密的證據。接手步驟及版本紀錄見[發布交接](release-handoff-2026-09-18.md)。
 
 部署腳本/Compose 為 root-owned，main push 只更新應用 image，不覆寫基礎權限設定。
 失敗回退保留同一份 wallet/journal，**不回退資料**；不相容資料格式須先備份、驗證遷移。

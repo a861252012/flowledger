@@ -209,9 +209,6 @@ func TestVaultQuoteAndSend(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer svc.Close()
-	if err := svc.SetVaultAddress(testVault); err != nil {
-		t.Fatal(err)
-	}
 	created, err := svc.keystore.Create("test-password-12345")
 	if err != nil {
 		t.Fatal(err)
@@ -220,6 +217,29 @@ func TestVaultQuoteAndSend(t *testing.T) {
 
 	ctx := context.Background()
 
+	// Unconfigured vault rejects quote
+	_, err = svc.Quote(ctx, &QuoteRequest{
+		Action: "vault_deposit",
+		To:     walletAddr,
+		Amount: "0.5",
+	})
+	if err == nil || err.Error() != "尚未設定合約地址，暫時無法操作" {
+		t.Fatalf("expected unconfigured vault quote to reject, got %v", err)
+	}
+
+	_, err = svc.Quote(ctx, &QuoteRequest{
+		Action: "vault_withdraw",
+		To:     walletAddr,
+		Amount: "0.5",
+	})
+	if err == nil || err.Error() != "尚未設定合約地址，暫時無法操作" {
+		t.Fatalf("expected unconfigured vault quote to reject, got %v", err)
+	}
+
+	if err := svc.SetVaultAddress(testVault); err != nil {
+		t.Fatal(err)
+	}
+
 	// Client cannot specify contract
 	_, err = svc.Quote(ctx, &QuoteRequest{
 		Action:   "vault_deposit",
@@ -227,7 +247,7 @@ func TestVaultQuoteAndSend(t *testing.T) {
 		Amount:   "0.5",
 		Contract: "0x2222222222222222222222222222222222222222",
 	})
-	if err == nil || err.Error() != "存款箱操作不得由客戶端指定 contract 合約地址" {
+	if err == nil || err.Error() != "合約地址由伺服器設定，無法在操作時變更" {
 		t.Fatalf("expected contract reject, got %v", err)
 	}
 
@@ -237,7 +257,7 @@ func TestVaultQuoteAndSend(t *testing.T) {
 		To:     "0x3333333333333333333333333333333333333333",
 		Amount: "0.5",
 	})
-	if err == nil || err.Error() != "存款箱目標地址不符" {
+	if err == nil || err.Error() != "合約操作的錢包地址不符，請重新預估" {
 		t.Fatalf("expected mismatching to reject, got %v", err)
 	}
 
@@ -259,6 +279,19 @@ func TestVaultQuoteAndSend(t *testing.T) {
 	if depQuote.Symbol != "ETH" {
 		t.Fatalf("quote Symbol: got %q, want ETH", depQuote.Symbol)
 	}
+
+	// Changed or cleared vault address rejects send
+	svc.vaultAddress = ""
+	_, err = svc.Send(ctx, depQuote.ID, "test-password-12345")
+	if err == nil || err.Error() != "合約設定已變更，請重新預估" {
+		t.Fatalf("expected cleared vault address to reject Send, got %v", err)
+	}
+	svc.vaultAddress = "0x9999999999999999999999999999999999999999"
+	_, err = svc.Send(ctx, depQuote.ID, "test-password-12345")
+	if err == nil || err.Error() != "合約設定已變更，請重新預估" {
+		t.Fatalf("expected mismatched vault address to reject Send, got %v", err)
+	}
+	svc.vaultAddress = testVault // Restore
 
 	// Send deposit
 	depResp, err := svc.Send(ctx, depQuote.ID, "test-password-12345")
@@ -377,7 +410,7 @@ func TestVaultAdversarialCases(t *testing.T) {
 		To:     walletAddr,
 		Amount: "0",
 	})
-	if err == nil || err.Error() != "存款金額必須大於 0" {
+	if err == nil || err.Error() != "存入金額必須大於 0" {
 		t.Fatalf("expected zero deposit reject, got %v", err)
 	}
 
@@ -387,7 +420,7 @@ func TestVaultAdversarialCases(t *testing.T) {
 		To:     walletAddr,
 		Amount: "0",
 	})
-	if err == nil || err.Error() != "提款金額必須大於 0" {
+	if err == nil || err.Error() != "取回金額必須大於 0" {
 		t.Fatalf("expected zero withdraw reject, got %v", err)
 	}
 
@@ -418,7 +451,7 @@ func TestVaultAdversarialCases(t *testing.T) {
 	}
 	vaultBal = big.NewInt(1)
 	_, err = svc.Send(ctx, qWith.ID, "test-password-12345")
-	if err == nil || err.Error() != "存款箱餘額不足以提款" {
+	if err == nil || err.Error() != "合約餘額不足，請減少取回金額" {
 		t.Fatalf("expected insufficient vault balance, got %v", err)
 	}
 
@@ -434,7 +467,7 @@ func TestVaultAdversarialCases(t *testing.T) {
 	}
 	callErr = errors.New("execution reverted: TransferFailed")
 	_, err = svc.Send(ctx, qValidWith.ID, "test-password-12345")
-	if err == nil || err.Error() != "存款箱合約模擬執行失敗，未送出交易" {
+	if err == nil || err.Error() != "合約預先檢查未通過，交易尚未送出" {
 		t.Fatalf("expected simulation revert, got %v", err)
 	}
 	callErr = nil
@@ -496,19 +529,19 @@ func TestSimulateVaultCallCustomErrors(t *testing.T) {
 			name:    "ZeroDeposit",
 			sig:     "ZeroDeposit()",
 			hexID:   "56316e87",
-			wantErr: "存款金額必須大於 0",
+			wantErr: "存入金額必須大於 0",
 		},
 		{
 			name:    "ZeroWithdraw",
 			sig:     "ZeroWithdraw()",
 			hexID:   "b8cb6219",
-			wantErr: "提款金額必須大於 0",
+			wantErr: "取回金額必須大於 0",
 		},
 		{
 			name:    "InsufficientBalance",
 			sig:     "InsufficientBalance(uint256,uint256)",
 			hexID:   "cf479181",
-			wantErr: "存款箱餘額不足以提款",
+			wantErr: "合約餘額不足，請減少取回金額",
 		},
 		{
 			name:    "ReentrantCall",
@@ -571,42 +604,42 @@ func TestSimulateVaultCallCustomErrors(t *testing.T) {
 		{
 			name:    "ZeroDeposit selector",
 			err:     errors.New("execution reverted: 0x" + zeroDeposit),
-			wantErr: "存款金額必須大於 0",
+			wantErr: "存入金額必須大於 0",
 		},
 		{
 			name:    "ZeroDeposit DataError",
 			err:     &mockCustomDataError{msg: "execution reverted", data: "0x" + zeroDeposit},
-			wantErr: "存款金額必須大於 0",
+			wantErr: "存入金額必須大於 0",
 		},
 		{
 			name:    "ZeroWithdraw selector",
 			err:     errors.New("execution reverted: 0x" + zeroWithdraw),
-			wantErr: "提款金額必須大於 0",
+			wantErr: "取回金額必須大於 0",
 		},
 		{
 			name:    "ZeroWithdraw DataError",
 			err:     &mockCustomDataError{msg: "execution reverted", data: "0x" + zeroWithdraw},
-			wantErr: "提款金額必須大於 0",
+			wantErr: "取回金額必須大於 0",
 		},
 		{
 			name:    "InsufficientBalance selector",
 			err:     errors.New("execution reverted: 0x" + insufficientBalance + "0000000000000000000000000000000000000000000000000de0b6b3a7640000"),
-			wantErr: "存款箱餘額不足以提款",
+			wantErr: "合約餘額不足，請減少取回金額",
 		},
 		{
 			name:    "InsufficientBalance DataError",
 			err:     &mockCustomDataError{msg: "execution reverted", data: "0x" + insufficientBalance},
-			wantErr: "存款箱餘額不足以提款",
+			wantErr: "合約餘額不足，請減少取回金額",
 		},
 		{
 			name:    "InsufficientBalance packed ABI data",
 			err:     &mockCustomDataError{msg: "execution reverted", data: hexutil.Encode(insufficientFullPayload)},
-			wantErr: "存款箱餘額不足以提款",
+			wantErr: "合約餘額不足，請減少取回金額",
 		},
 		{
 			name:    "Selector inside argument does not override error",
 			err:     &mockCustomDataError{msg: "execution reverted", data: hexutil.Encode(selectorPayload)},
-			wantErr: "存款箱餘額不足以提款",
+			wantErr: "合約餘額不足，請減少取回金額",
 		},
 		{
 			name:    "Error data takes precedence over message",
@@ -616,12 +649,12 @@ func TestSimulateVaultCallCustomErrors(t *testing.T) {
 		{
 			name:    "Unrelated map field is not revert data",
 			err:     &mockCustomDataError{msg: "execution reverted", data: map[string]any{"requestId": "0x" + zeroDeposit}},
-			wantErr: "存款箱合約模擬執行失敗，未送出交易",
+			wantErr: "合約預先檢查未通過，交易尚未送出",
 		},
 		{
 			name:    "Malformed hexadecimal data is not a selector",
 			err:     &mockCustomDataError{msg: "execution reverted", data: "0x" + zeroDeposit + "zz"},
-			wantErr: "存款箱合約模擬執行失敗，未送出交易",
+			wantErr: "合約預先檢查未通過，交易尚未送出",
 		},
 		{
 			name:    "ReentrantCall selector",
@@ -636,12 +669,12 @@ func TestSimulateVaultCallCustomErrors(t *testing.T) {
 		{
 			name:    "ZeroDeposit DataError map",
 			err:     &mockCustomDataError{msg: "execution reverted", data: map[string]any{"data": "0x" + zeroDeposit}},
-			wantErr: "存款金額必須大於 0",
+			wantErr: "存入金額必須大於 0",
 		},
 		{
 			name:    "ZeroDeposit DataError byte slice",
 			err:     &mockCustomDataError{msg: "execution reverted", data: zeroDepositBytes},
-			wantErr: "存款金額必須大於 0",
+			wantErr: "存入金額必須大於 0",
 		},
 		{
 			name:    "Preserve ErrTimeout",
@@ -661,7 +694,7 @@ func TestSimulateVaultCallCustomErrors(t *testing.T) {
 		{
 			name:    "Generic error",
 			err:     errors.New("execution reverted: some other error"),
-			wantErr: "存款箱合約模擬執行失敗，未送出交易",
+			wantErr: "合約預先檢查未通過，交易尚未送出",
 		},
 	}
 
@@ -673,5 +706,46 @@ func TestSimulateVaultCallCustomErrors(t *testing.T) {
 				t.Fatalf("SimulateVaultCall: got %v, want %q", err, tc.wantErr)
 			}
 		})
+	}
+}
+
+func TestVaultNonSepoliaChain(t *testing.T) {
+	c := mockRPC(t, func(method string, params json.RawMessage) any {
+		switch method {
+		case "eth_chainId":
+			return "0x66eee" // 421614 (Arbitrum Sepolia)
+		default:
+			return nil
+		}
+	}, chain.ArbitrumSepoliaID)
+
+	dir := t.TempDir()
+	svc, err := NewService(c, filepath.Join(dir, "w"), 2, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	created, err := svc.keystore.Create("test-password-12345")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	_, err = svc.Quote(ctx, &QuoteRequest{
+		Action: "vault_deposit",
+		To:     created.Address,
+		Amount: "0.5",
+	})
+	if err == nil || err.Error() != "此合約目前僅支援 Ethereum Sepolia 測試網" {
+		t.Fatalf("expected non-Sepolia chain quote to reject, got %v", err)
+	}
+
+	_, err = svc.Quote(ctx, &QuoteRequest{
+		Action: "vault_withdraw",
+		To:     created.Address,
+		Amount: "0.5",
+	})
+	if err == nil || err.Error() != "此合約目前僅支援 Ethereum Sepolia 測試網" {
+		t.Fatalf("expected non-Sepolia chain quote to reject, got %v", err)
 	}
 }

@@ -117,7 +117,7 @@ func ParseQuoteRequest(request *QuoteRequest) (QuoteCommand, error) {
 		}
 		if request.Contract != "" {
 			if action == ActionVaultDeposit || action == ActionVaultWithdraw {
-				return QuoteCommand{}, errors.New("存款箱操作不得由客戶端指定 contract 合約地址")
+				return QuoteCommand{}, errors.New("合約地址由伺服器設定，無法在操作時變更")
 			}
 			contract, err = ParseEVMAddress(request.Contract)
 			if err != nil {

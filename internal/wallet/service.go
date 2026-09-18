@@ -264,13 +264,13 @@ func (s *Service) QuoteCommand(ctx context.Context, command QuoteCommand) (*Quot
 		case ActionWrap, ActionUnwrap, ActionSwap:
 			return nil, errors.New("此網路支援原生幣與 ERC-20 收付款；兌換目前只配置 Ethereum Sepolia")
 		case ActionVaultDeposit, ActionVaultWithdraw:
-			return nil, errors.New("存款箱目前僅支援 Ethereum Sepolia 測試網")
+			return nil, errors.New("此合約目前僅支援 Ethereum Sepolia 測試網")
 		}
 	}
 
 	if command.Action == ActionVaultDeposit || command.Action == ActionVaultWithdraw {
 		if s.vaultAddress == "" {
-			return nil, errors.New("尚未配置存款箱合約地址")
+			return nil, errors.New("尚未設定合約地址，暫時無法操作")
 		}
 		command.Contract = EVMAddress(s.vaultAddress)
 	}
@@ -407,7 +407,7 @@ func (s *Service) Send(ctx context.Context, quoteID, password string) (*SendResp
 		}
 	case ActionVaultDeposit, ActionVaultWithdraw:
 		if s.client.ChainID() != chain.SepoliaID || s.vaultAddress == "" || quote.Contract != common.HexToAddress(s.vaultAddress) {
-			return nil, errors.New("存款箱設定不符或已變更，請重新預估")
+			return nil, errors.New("合約設定已變更，請重新預估")
 		}
 		if err := VerifyContractBytecode(ctx, s.client, quote.Contract); err != nil {
 			return nil, err
@@ -418,7 +418,7 @@ func (s *Service) Send(ctx context.Context, quoteID, password string) (*SendResp
 				return nil, err
 			}
 			if vaultBal.Cmp(quote.AmountRaw) < 0 {
-				return nil, errors.New("存款箱餘額不足以提款")
+				return nil, errors.New("合約餘額不足，請減少取回金額")
 			}
 		}
 		if err := SimulateVaultCall(ctx, s.client, quote.From, quote.TxTo, quote.TxValue, quote.Data); err != nil {

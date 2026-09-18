@@ -1,0 +1,421 @@
+{
+  "created_at": "2026-09-18T13:31:39.621396+00:00",
+  "head": "66ae38bb4721d15b1993cf6343670883061c305b",
+  "source_sha256": "3a75df0852e8f14454e909f47f39c9092c35ac7029be1e529483270974cf1195",
+  "source_scope": "176 tracked/non-ignored source/build/test files; excludes Markdown, docs and test-results",
+  "phases": {
+    "initial": {
+      "started_at": "2026-09-18T13:23:48.937727+00:00",
+      "head": "66ae38bb4721d15b1993cf6343670883061c305b",
+      "source_sha256": "a76791f28d4f523d445987d5e98dbe165f9009972d097badf0d4aef89e3f348a",
+      "scope": "tracked and non-ignored source/build/test files; excludes Markdown, docs and test-results",
+      "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+      "versions": {
+        "go": "go version go1.26.1 darwin/arm64",
+        "node": "v24.2.0",
+        "npm": "11.3.0",
+        "docker": "29.4.0 linux/aarch64"
+      },
+      "checks": [
+        {
+          "name": "contracts-install",
+          "command": [
+            "npm",
+            "ci",
+            "--ignore-scripts",
+            "--prefix",
+            "contracts"
+          ],
+          "started_at": "2026-09-18T13:23:49.376135+00:00",
+          "log": "contracts-install.log",
+          "exit_code": 0,
+          "duration_seconds": 0.56,
+          "finished_at": "2026-09-18T13:23:49.939103+00:00",
+          "passed": true
+        },
+        {
+          "name": "contracts-check",
+          "command": [
+            "npm",
+            "run",
+            "check",
+            "--prefix",
+            "contracts"
+          ],
+          "started_at": "2026-09-18T13:23:49.939951+00:00",
+          "log": "contracts-check.log",
+          "exit_code": 0,
+          "duration_seconds": 0.62,
+          "finished_at": "2026-09-18T13:23:50.561942+00:00",
+          "passed": true
+        },
+        {
+          "name": "browser-install",
+          "command": [
+            "npm",
+            "ci",
+            "--ignore-scripts",
+            "--prefix",
+            "tests/browser"
+          ],
+          "started_at": "2026-09-18T13:23:50.562340+00:00",
+          "log": "browser-install.log",
+          "exit_code": 0,
+          "duration_seconds": 0.5,
+          "finished_at": "2026-09-18T13:23:51.059556+00:00",
+          "passed": true
+        },
+        {
+          "name": "browser-e2e",
+          "command": [
+            "npm",
+            "run",
+            "test:e2e",
+            "--prefix",
+            "tests/browser"
+          ],
+          "started_at": "2026-09-18T13:23:51.060458+00:00",
+          "log": "browser-e2e.log",
+          "exit_code": 0,
+          "duration_seconds": 6.01,
+          "finished_at": "2026-09-18T13:23:57.068468+00:00",
+          "passed": true
+        },
+        {
+          "name": "browser-fixtures",
+          "command": [
+            "npm",
+            "test",
+            "--prefix",
+            "tests/browser"
+          ],
+          "started_at": "2026-09-18T13:23:57.068858+00:00",
+          "log": "browser-fixtures.log",
+          "exit_code": 0,
+          "duration_seconds": 11.83,
+          "finished_at": "2026-09-18T13:24:08.900240+00:00",
+          "passed": true
+        },
+        {
+          "name": "go-race",
+          "command": [
+            "go",
+            "test",
+            "-race",
+            "-count=1",
+            "-json",
+            "./..."
+          ],
+          "started_at": "2026-09-18T13:24:08.900676+00:00",
+          "log": "go-race.log",
+          "exit_code": 0,
+          "duration_seconds": 14.19,
+          "finished_at": "2026-09-18T13:24:23.085982+00:00",
+          "passed": true,
+          "tests_passed": 569,
+          "tests_skipped": [
+            {
+              "package": "github.com/a861252012/testnet-wallet-lab/internal/chain",
+              "test": "TestSepoliaActivityReadOnly"
+            },
+            {
+              "package": "github.com/a861252012/testnet-wallet-lab/internal/chain",
+              "test": "TestAdditionalNetworksReadOnly"
+            },
+            {
+              "package": "github.com/a861252012/testnet-wallet-lab/internal/wallet",
+              "test": "TestSepoliaExchangeReadOnly"
+            },
+            {
+              "package": "github.com/a861252012/testnet-wallet-lab/internal/wallet",
+              "test": "TestSolanaDevnetSendAcceptance"
+            },
+            {
+              "package": "github.com/a861252012/testnet-wallet-lab/internal/wallet",
+              "test": "TestTronShastaReadOnly"
+            }
+          ],
+          "tests_failed": []
+        },
+        {
+          "name": "go-vet",
+          "command": [
+            "go",
+            "vet",
+            "./..."
+          ],
+          "started_at": "2026-09-18T13:24:23.092148+00:00",
+          "log": "go-vet.log",
+          "exit_code": 0,
+          "duration_seconds": 0.44,
+          "finished_at": "2026-09-18T13:24:23.529103+00:00",
+          "passed": true
+        },
+        {
+          "name": "gofmt",
+          "command": [
+            "gofmt",
+            "-l",
+            "cmd",
+            "internal",
+            "contracts",
+            "tests"
+          ],
+          "started_at": "2026-09-18T13:24:23.529550+00:00",
+          "log": "gofmt.log",
+          "exit_code": 0,
+          "duration_seconds": 0.04,
+          "finished_at": "2026-09-18T13:24:23.570287+00:00",
+          "passed": true
+        },
+        {
+          "name": "go-fix",
+          "command": [
+            "go",
+            "fix",
+            "-diff",
+            "./..."
+          ],
+          "started_at": "2026-09-18T13:24:23.570662+00:00",
+          "log": "go-fix.log",
+          "exit_code": 0,
+          "duration_seconds": 0.44,
+          "finished_at": "2026-09-18T13:24:24.007454+00:00",
+          "passed": true
+        },
+        {
+          "name": "deployment-unit",
+          "command": [
+            "python3",
+            "-m",
+            "unittest",
+            "discover",
+            "-s",
+            "tests/deployment",
+            "-p",
+            "test_*.py"
+          ],
+          "started_at": "2026-09-18T13:24:24.007859+00:00",
+          "log": "deployment-unit.log",
+          "exit_code": 1,
+          "duration_seconds": 0.13,
+          "finished_at": "2026-09-18T13:24:24.140811+00:00",
+          "passed": false
+        }
+      ],
+      "finished_at": "2026-09-18T13:24:24.160743+00:00",
+      "source_unchanged": true,
+      "source_after_sha256": "a76791f28d4f523d445987d5e98dbe165f9009972d097badf0d4aef89e3f348a"
+    },
+    "deployment_fix": {
+      "started_at": "2026-09-18T13:25:48.022420+00:00",
+      "head": "66ae38bb4721d15b1993cf6343670883061c305b",
+      "source_sha256": "3a75df0852e8f14454e909f47f39c9092c35ac7029be1e529483270974cf1195",
+      "scope": "tracked and non-ignored source/build/test files; excludes Markdown, docs and test-results",
+      "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+      "versions": {
+        "go": "go version go1.26.1 darwin/arm64",
+        "node": "v24.2.0",
+        "npm": "11.3.0",
+        "docker": "29.4.0 linux/aarch64"
+      },
+      "checks": [
+        {
+          "name": "deployment-unit",
+          "command": [
+            "python3",
+            "-m",
+            "unittest",
+            "discover",
+            "-s",
+            "tests/deployment",
+            "-p",
+            "test_*.py"
+          ],
+          "started_at": "2026-09-18T13:25:48.340259+00:00",
+          "log": "deployment-unit.log",
+          "exit_code": 0,
+          "duration_seconds": 9.88,
+          "finished_at": "2026-09-18T13:25:58.222186+00:00",
+          "passed": true
+        },
+        {
+          "name": "workflow-lint",
+          "command": [
+            "go",
+            "run",
+            "github.com/rhysd/actionlint/cmd/actionlint@v1.7.7",
+            ".github/workflows/verify.yml"
+          ],
+          "started_at": "2026-09-18T13:25:58.222821+00:00",
+          "log": "workflow-lint.log",
+          "exit_code": 0,
+          "duration_seconds": 1.89,
+          "finished_at": "2026-09-18T13:26:00.108997+00:00",
+          "passed": true
+        },
+        {
+          "name": "diff-check",
+          "command": [
+            "git",
+            "diff",
+            "--check",
+            "HEAD"
+          ],
+          "started_at": "2026-09-18T13:26:00.109904+00:00",
+          "log": "diff-check.log",
+          "exit_code": 0,
+          "duration_seconds": 0.04,
+          "finished_at": "2026-09-18T13:26:00.151000+00:00",
+          "passed": true
+        }
+      ],
+      "finished_at": "2026-09-18T13:26:00.175786+00:00",
+      "source_unchanged": true,
+      "source_after_sha256": "3a75df0852e8f14454e909f47f39c9092c35ac7029be1e529483270974cf1195"
+    },
+    "guard_and_image": {
+      "started_at": "2026-09-18T13:27:35.908318+00:00",
+      "source_sha256": "3a75df0852e8f14454e909f47f39c9092c35ac7029be1e529483270974cf1195",
+      "checks": [
+        {
+          "name": "missing-vault",
+          "command": [
+            "node",
+            "tests/browser/e2e.cjs"
+          ],
+          "fixture_env": {
+            "E2E_BASE_URL": "http://127.0.0.1:1"
+          },
+          "expected": "nonzero exit with provided together",
+          "exit_code": 1,
+          "passed": true
+        },
+        {
+          "name": "missing-url",
+          "command": [
+            "node",
+            "tests/browser/e2e.cjs"
+          ],
+          "fixture_env": {
+            "E2E_VAULT": "0x1111111111111111111111111111111111111111"
+          },
+          "expected": "nonzero exit with provided together",
+          "exit_code": 1,
+          "passed": true
+        },
+        {
+          "name": "external-url",
+          "command": [
+            "node",
+            "tests/browser/e2e.cjs"
+          ],
+          "fixture_env": {
+            "E2E_BASE_URL": "https://example.invalid",
+            "E2E_VAULT": "0x1111111111111111111111111111111111111111",
+            "E2E_BACKEND": "simulated"
+          },
+          "expected": "nonzero exit with loopback Go test server",
+          "exit_code": 1,
+          "passed": true
+        },
+        {
+          "name": "missing-backend-marker",
+          "command": [
+            "node",
+            "tests/browser/e2e.cjs"
+          ],
+          "fixture_env": {
+            "E2E_BASE_URL": "http://127.0.0.1:1",
+            "E2E_VAULT": "0x1111111111111111111111111111111111111111"
+          },
+          "expected": "nonzero exit with local Go simulated EVM harness",
+          "exit_code": 1,
+          "passed": true
+        },
+        {
+          "name": "docker-build",
+          "command": [
+            "docker",
+            "build",
+            "-f",
+            "Dockerfile.deploy",
+            "--build-arg",
+            "APP_VERSION=local-review-3a75df0852e8",
+            "-t",
+            "testnet-wallet-lab:review-20260918-3a75df08",
+            "."
+          ],
+          "exit_code": 0,
+          "passed": true,
+          "duration_seconds": 96.16
+        },
+        {
+          "name": "docker-smoke",
+          "command": [
+            "python3",
+            "tests/deployment/smoke.py",
+            "testnet-wallet-lab:review-20260918-3a75df08",
+            "local-review-3a75df0852e8"
+          ],
+          "exit_code": 0,
+          "passed": true,
+          "duration_seconds": 48.59
+        }
+      ],
+      "finished_at": "2026-09-18T13:30:04.020353+00:00",
+      "image": "testnet-wallet-lab:review-20260918-3a75df08",
+      "image_inspect": {
+        "Id": "sha256:a81bb355a143329478b1baf337579245daa435c7c4163b8a7bb065cee6d53588",
+        "Architecture": "arm64",
+        "Os": "linux",
+        "Created": "2026-09-18T21:29:14.661906416+08:00"
+      }
+    }
+  },
+  "source_changes_between_phases": [
+    "tests/deployment/test_deploy.py",
+    "tests/deployment/test_poll.py"
+  ],
+  "archive": {
+    "file": "raw-results.zip",
+    "sha256": "09f9dad2d4939b50047141ad2b13da72034eece43356a3f25eab5a1e278d8b28",
+    "bytes": 83639
+  },
+  "raw_files": {
+    "additional/docker-build.log": "16439ba2447c1e985e503fa24431c218b00a05ef8497b1fc4de5e1517bd859d9",
+    "additional/docker-smoke.log": "405b1d64891e33c894c8b66fbad99b071c0dd05b3cd23a451663a9a7c2857e74",
+    "additional/external-url.log": "be273272dca06f51c6aab9291c13a13855bcfd05b6a2b386cdb65df04e48fea9",
+    "additional/missing-backend-marker.log": "a4aa909dcf3d2d91887ff9747939a216eb7c9c5a427e8c47ca64fb0e1cd4c793",
+    "additional/missing-url.log": "cd110976b61d79c2f6d649c75e9673fb79d9d72545b8ec2a5370d56c3375ec5f",
+    "additional/missing-vault.log": "e50794fbd2d2b029345094fa0c6e7e01412fcd21e1bbcf7e089a9a0240aab772",
+    "additional/results.json": "07c30e3790d4aa0c54c17ff551c188a0a5ddc9428d98a90626abe097e119a6c5",
+    "browser-e2e.log": "d46f67fc3897dc34038892e56d7c1f55734f267117c0a2e3967cb0b720057e22",
+    "browser-fixtures.log": "fec4081993ebfabdbda6f38d62073c8f33ff9584167a378000c8fa38a3e731c3",
+    "browser-install.log": "6019262bc85f03e1eeabb02620ba7aeddda457341f46b7c4b3bb9b438e7873ee",
+    "contracts-check.log": "f1bd21e9ba411bd5d79a9c6102bf16215e58351bb49875a7284db277d475cd93",
+    "contracts-install.log": "b0b655cce99a9a486babd11ae6e11cfee4bb274aed8ed63e10152c07497b6bea",
+    "deployment-unit.log": "221958b864acb82205e3e8a20928b416f6a0b00cf7a42e3c5c9096d0a39525ac",
+    "followup/deployment-unit.log": "1742cbfccda5be642f2590dcdf863639fc041c9a7ed8a179f819360537b2c55d",
+    "followup/diff-check.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "followup/results.json": "00751899f2da6721c66c14a146a341390fc571a8d17ddded4be486006cb23471",
+    "followup/source-after.json": "cee3a28942c1d21e0ca3967a295a9d03e6fe161bb1480ef3d46091271dea8570",
+    "followup/source-before.json": "cee3a28942c1d21e0ca3967a295a9d03e6fe161bb1480ef3d46091271dea8570",
+    "followup/workflow-lint.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "go-fix.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "go-race.log": "856cfd3805696f26d0bb00403dcbf60b8f84af7463060379f225a2b813bd6e87",
+    "go-vet.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "gofmt.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "results.json": "e6741b39ac951228cc318c1693d9610ae885c3b59bdf9e5cad1f57bec6e084a0",
+    "source-after.json": "9b2c416a2aa9a420767db7da4cce5dd7b950fa6438353d866f55d67b2cfdad10",
+    "source-before.json": "9b2c416a2aa9a420767db7da4cce5dd7b950fa6438353d866f55d67b2cfdad10"
+  },
+  "not_executed": [
+    "GitHub Actions run for these uncommitted changes",
+    "Node 22 browser run",
+    "Linux amd64 smoke",
+    "govulncheck",
+    "new release public-site live check",
+    "public Sepolia ETHVault deployment/verification/deposit/withdraw"
+  ]
+}

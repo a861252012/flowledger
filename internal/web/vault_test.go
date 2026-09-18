@@ -5,6 +5,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/a861252012/testnet-wallet-lab/internal/chain"
@@ -50,6 +51,59 @@ func TestVaultWebRouteDisabled(t *testing.T) {
 	}
 	if res.Enabled || res.Contract != "" || res.Balance != "" || res.BalanceRaw != "" {
 		t.Fatalf("expected disabled vault info, got %#v", res)
+	}
+
+	created, err := ws.Create("test-password-12345")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. vault_deposit when unconfigured returns 400 with 尚未設定合約地址
+	depositBody := strings.NewReader(`{"action":"vault_deposit","to":"` + created.Address + `","amount":"0.5"}`)
+	depReq := httptest.NewRequest("POST", "http://localhost:8090/api/wallet/quote", depositBody)
+	depReq.Header.Set("Content-Type", "application/json")
+	depReq.Header.Set("X-Wallet-CSRF", ws.CSRFToken())
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, depReq)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for unconfigured vault deposit, got %d", rec.Code)
+	}
+	var depErr map[string]string
+	_ = json.Unmarshal(rec.Body.Bytes(), &depErr)
+	if depErr["error"] != "尚未設定合約地址，暫時無法操作" {
+		t.Fatalf("unexpected error message: %v", depErr["error"])
+	}
+
+	// 2. vault_withdraw when unconfigured returns 400 with 尚未設定合約地址
+	withdrawBody := strings.NewReader(`{"action":"vault_withdraw","to":"` + created.Address + `","amount":"0.5"}`)
+	withReq := httptest.NewRequest("POST", "http://localhost:8090/api/wallet/quote", withdrawBody)
+	withReq.Header.Set("Content-Type", "application/json")
+	withReq.Header.Set("X-Wallet-CSRF", ws.CSRFToken())
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, withReq)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for unconfigured vault withdraw, got %d", rec.Code)
+	}
+	var withErr map[string]string
+	_ = json.Unmarshal(rec.Body.Bytes(), &withErr)
+	if withErr["error"] != "尚未設定合約地址，暫時無法操作" {
+		t.Fatalf("unexpected error message: %v", withErr["error"])
+	}
+
+	// 3. Client cannot specify contract
+	badContractBody := strings.NewReader(`{"action":"vault_deposit","to":"` + created.Address + `","amount":"0.5","contract":"0x1111111111111111111111111111111111111111"}`)
+	badReq := httptest.NewRequest("POST", "http://localhost:8090/api/wallet/quote", badContractBody)
+	badReq.Header.Set("Content-Type", "application/json")
+	badReq.Header.Set("X-Wallet-CSRF", ws.CSRFToken())
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, badReq)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for client contract specification, got %d", rec.Code)
+	}
+	var badErr map[string]string
+	_ = json.Unmarshal(rec.Body.Bytes(), &badErr)
+	if badErr["error"] != "合約地址由伺服器設定，無法在操作時變更" {
+		t.Fatalf("unexpected error message: %v", badErr["error"])
 	}
 }
 
